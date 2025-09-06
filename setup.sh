@@ -63,4 +63,11 @@ echo ""
 # --- FASE 4: EJECUCIÓN ---
 echo ">>> [FASE 4/5] Configuración completa. Iniciando los servicios con Supervisor..."
 mkdir -p /workspace/logs
-exec /usr/bin/supervisord -n -c /workspace/supervisor.conf
+/usr/bin/supervisord -c /workspace/supervisor.conf
+
+# Se añade una breve pausa para dar tiempo a que los servicios arranquen
+sleep 5
+
+# Se muestra el estado de los servicios para confirmación final
+echo ">>> Servicios iniciados. Verificando estado con 'supervisorctl status':"
+supervisorctl status
