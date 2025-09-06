@@ -1,19 +1,42 @@
 #!/bin/bash
 
-# --- Script de Configuración y Arranque Autónomo para Morpheus Pod v7.1 (Corrección de Logs) ---
-# ESTRATEGIA: Se clonan todos los nodos desde los forks de 'ceutaseguridad'.
-# Los modelos de Wav2Lip se descargan desde el fork verificado.
-# Se añade la creación del directorio de logs para Supervisor.
+# --- Script de Configuración y Arranque Autónomo para Morpheus Pod v7.2 ---
+# ESTRATEGIA:
+# 1. (NUEVO) Se descarga la última versión de 'morpheus-pod' y se sobreescribe el contenido de /workspace.
+# 2. Se clonan todos los nodos desde los forks de 'ceutaseguridad'.
+# 3. Los modelos de Wav2Lip se descargan desde el fork verificado.
+# 4. Se añade la creación del directorio de logs para Supervisor.
 
 # Salir inmediatamente si un comando falla
 set -e
 
+# --- FASE 0: AUTO-ACTUALIZACIÓN DEL ENTORNO DEL POD ---
+echo ">>> [FASE 0/5] Descargando y sobreescribiendo la última versión del pod desde GitHub..."
+# URL del repositorio como archivo ZIP
+REPO_URL="https://github.com/ceutaseguridad/morpheus-pod/archive/refs/heads/main.zip"
+# Descargamos el archivo ZIP en el directorio de trabajo
+wget -O /workspace/morpheus-pod.zip "$REPO_URL"
+# Instalamos 'unzip' si no está presente, junto con otras dependencias
+apt-get update && apt-get install -y supervisor ffmpeg git unzip
+# Descomprimimos el ZIP, sobreescribiendo (-o) todo en /workspace
+# El contenido se extraerá a una carpeta como 'morpheus-pod-main'
+unzip -o /workspace/morpheus-pod.zip -d /workspace
+# Movemos el contenido de la carpeta extraída al directorio raíz de /workspace, sobreescribiendo todo.
+# El truco `/.` asegura que se copien también los archivos ocultos (dotfiles).
+cp -rf /workspace/morpheus-pod-main/. /workspace/
+# Limpiamos los archivos temporales
+rm -f /workspace/morpheus-pod.zip
+rm -rf /workspace/morpheus-pod-main
+echo ">>> Entorno del pod actualizado a la última versión."
+
+
 # --- FASE 1: INSTALACIÓN DE DEPENDENCIAS DEL SISTEMA ---
-echo ">>> [FASE 1/4] Instalando dependencias del sistema (supervisor, ffmpeg, git)..."
-apt-get update && apt-get install -y supervisor ffmpeg git
+# (La instalación ya se hizo en la fase 0 para tener 'unzip' disponible)
+echo ">>> [FASE 1/5] Dependencias del sistema (supervisor, ffmpeg, git, unzip) instaladas."
+
 
 # --- FASE 2: INSTALACIÓN DE NODOS Y DEPENDENCIAS DE PYTHON ---
-echo ">>> [FASE 2/4] Instalando ComfyUI, Nodos Personalizados y librerías de Python..."
+echo ">>> [FASE 2/5] Instalando ComfyUI, Nodos Personalizados y librerías de Python..."
 if [ ! -d "/workspace/ComfyUI" ]; then
     git clone https://github.com/comfyanonymous/ComfyUI.git /workspace/ComfyUI
 fi
@@ -27,10 +50,12 @@ if [ ! -d "$CUSTOM_NODES_DIR/ComfyUI-wav2lip" ]; then git clone https://github.c
 echo "Instalando dependencias de ComfyUI (puede tardar)..."
 /usr/bin/python3.11 -m pip install --no-cache-dir -r /workspace/ComfyUI/requirements.txt
 echo "Instalando dependencias de Morpheus (unificadas)..."
+# Este 'requirements.txt' ahora será el más actualizado gracias a la FASE 0
 /usr/bin/python3.11 -m pip install --no-cache-dir --ignore-installed -r /workspace/requirements.txt
 
+
 # --- FASE 3: DESCARGA DE MODELOS DE IA ---
-echo ">>> [FASE 3/4] Descargando modelos de IA..."
+echo ">>> [FASE 3/5] Descargando modelos de IA..."
 wget -nc https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/v1-5-pruned-emaonly.safetensors -P /workspace/ComfyUI/models/checkpoints/
 ANIMATE_DIFF_MODELS_DIR="/workspace/ComfyUI/models/animatediff_models"
 mkdir -p $ANIMATE_DIFF_MODELS_DIR
@@ -46,10 +71,12 @@ echo "==      [SETUP] Entorno del Pod configurado         =="
 echo "======================================================"
 echo ""
 
+
 # --- FASE 4: EJECUCIÓN ---
-echo ">>> [FASE 4/4] Configuración completa. Iniciando los servicios con Supervisor..."
+echo ">>> [FASE 4/5] Configuración completa. Iniciando los servicios con Supervisor..."
 
 # CORRECCIÓN FINAL: Crear el directorio de logs antes de llamar a supervisord
 mkdir -p /workspace/logs
 
+# Este 'supervisor.conf' también será el más actualizado
 exec /usr/bin/supervisord -n -c /workspace/supervisor.conf
