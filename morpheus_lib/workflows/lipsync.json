@@ -1,0 +1,38 @@
+{
+  "1": {
+    "inputs": {
+      "face": [ "2", 0 ],
+      "voice": [ "3", 0 ],
+      "wav2lip_checkpoint": "wav2lip_gan.pth"
+    },
+    "class_type": "Wav2LipNode",
+    "_meta": { "title": "Wav2Lip Processor" }
+  },
+  "2": {
+    "inputs": {
+      "image": "example_face.png",
+      "upload": "image"
+    },
+    "class_type": "LoadImage",
+    "_meta": { "title": "Load Face Image" }
+  },
+  "3": {
+    "inputs": {
+      "audio_file": "example_audio.wav"
+    },
+    "class_type": "LoadAudio",
+    "_meta": { "title": "Load Driving Audio" }
+  },
+  "4": {
+    "inputs": {
+      "frame_rate": 25,
+      "loop_count": 0,
+      "filename_prefix": "Morpheus_LipSync",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "images": [ "1", 0 ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": { "title": "Save LipSync Video" }
+  }
+}
