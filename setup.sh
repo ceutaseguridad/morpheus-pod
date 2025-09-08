@@ -1,9 +1,13 @@
 #!/bin/bash
 
-# --- Script de Configuración y Arranque Autónomo para Morpheus Pod v7.1 (Corrección de Logs) ---
-# ESTRATEGIA: Se clonan todos los nodos desde los forks de 'ceutaseguridad'.
-# Los modelos de Wav2Lip se descargan desde el fork verificado.
-# Se añade la creación del directorio de logs para Supervisor.
+# --- Script de Configuración y Arranque Autónomo para Morpheus Pod v8.0 (Lógica de Instalación Centralizada) ---
+# ESTRATEGIA: Este script es la ÚNICA fuente de verdad para la instalación y el arranque.
+# 1. Instala dependencias del sistema.
+# 2. Clona ComfyUI y los nodos.
+# 3. Instala las dependencias de ComfyUI (IA) PRIMERO.
+# 4. Instala las dependencias de Morpheus (Servidor) DESPUÉS.
+# 5. Descarga los modelos.
+# 6. Lanza Supervisor.
 
 # Salir inmediatamente si un comando falla
 set -e
@@ -24,10 +28,14 @@ if [ ! -d "$CUSTOM_NODES_DIR/ComfyUI-AnimateDiff-Evolved" ]; then git clone http
 if [ ! -d "$CUSTOM_NODES_DIR/ComfyUI-VideoHelperSuite" ]; then git clone https://github.com/ceutaseguridad/ComfyUI-VideoHelperSuite.git $CUSTOM_NODES_DIR/ComfyUI-VideoHelperSuite; fi
 if [ ! -d "$CUSTOM_NODES_DIR/ComfyUI-wav2lip" ]; then git clone https://github.com/ceutaseguridad/ComfyUI-wav2lip.git $CUSTOM_NODES_DIR/ComfyUI-wav2lip; fi
 
+# --- ORDEN DE INSTALACIÓN CORREGIDO Y CENTRALIZADO ---
+# 1. Instalar las dependencias de ComfyUI (incluyendo torch y transformers) PRIMERO.
 echo "Instalando dependencias de ComfyUI (puede tardar)..."
 /usr/bin/python3.11 -m pip install --no-cache-dir -r /workspace/ComfyUI/requirements.txt
-echo "Instalando dependencias de Morpheus (unificadas)..."
-/usr/bin/python3.11 -m pip install --no-cache-dir --ignore-installed -r /workspace/requirements.txt
+
+# 2. Instalar las dependencias de Morpheus (servidor) DESPUÉS, usando el nombre de archivo correcto.
+echo "Instalando dependencias de Morpheus (servidor)..."
+/usr/bin/python3.11 -m pip install --no-cache-dir -r /workspace/requirements_pod.txt
 
 # --- FASE 3: DESCARGA DE MODELOS DE IA ---
 echo ">>> [FASE 3/4] Descargando modelos de IA..."
@@ -49,7 +57,7 @@ echo ""
 # --- FASE 4: EJECUCIÓN ---
 echo ">>> [FASE 4/4] Configuración completa. Iniciando los servicios con Supervisor..."
 
-# CORRECCIÓN FINAL: Crear el directorio de logs antes de llamar a supervisord
+# Crear el directorio de logs antes de llamar a supervisord
 mkdir -p /workspace/logs
 
 exec /usr/bin/supervisord -n -c /workspace/supervisor.conf
