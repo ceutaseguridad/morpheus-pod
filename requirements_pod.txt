@@ -1,5 +1,6 @@
-# Morpheus Pod - Requirements Unificados v1.1
-# Este archivo contiene TODAS las dependencias de Python necesarias para Morpheus.
+# Morpheus Pod - Requirements MÍNIMOS v2.0
+# Este archivo solo contiene las dependencias del servidor.
+# ComfyUI se encarga de instalar torch, transformers, etc.
 
 # Servidores y API
 fastapi==0.103.1
@@ -11,15 +12,6 @@ python-multipart==0.0.6
 # Herramientas de Imagen/Vídeo
 piexif==1.1.3
 
-# IA y Transformers (dejamos que ComfyUI instale las versiones base)
-transformers
-accelerate
-bitsandbytes
-
 # Comunicación con ComfyUI
 requests
 websocket-client
-
-# Dependencias adicionales para evitar conflictos
-protobuf
-sentencepiece
