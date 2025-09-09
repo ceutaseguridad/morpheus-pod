@@ -1,9 +1,9 @@
 {
   "1": {
     "inputs": {
-      "lora_name": "add_detail.safetensors",
-      "strength_model": 0.8,
-      "strength_clip": 0.8,
+      "lora_name": "Tangbohu-Detail-Tweaker-XL(XL).safetensors",
+      "strength_model": 0.7,
+      "strength_clip": 0.7,
       "model": ["2", 0],
       "clip": ["2", 1]
     },
@@ -11,7 +11,7 @@
     "_meta": {"title": "LoraLoader"}
   },
   "2": {
-    "inputs": {"ckpt_name": "v1-5-pruned-emaonly.safetensors"},
+    "inputs": {"ckpt_name": "sd_xl_base_1.0.safetensors"},
     "class_type": "CheckpointLoaderSimple",
     "_meta": {"title": "Load Checkpoint"}
   },
@@ -19,7 +19,7 @@
     "inputs": {
       "video": "example.mp4",
       "force_rate": 8,
-      "force_size": "512x512",
+      "force_size": "1024x1024",
       "frame_load_cap": 90
     },
     "class_type": "VHS_VideoLoader",
@@ -29,7 +29,7 @@
     "inputs": {
       "frame_rate": 8,
       "loop_count": 0,
-      "filename_prefix": "Morpheus_VidDeepfake",
+      "filename_prefix": "Morpheus_VidDeepfake_XL",
       "format": "video/h264-mp4",
       "pix_fmt": "yuv420p",
       "images": ["10", 0]
@@ -37,18 +37,9 @@
     "class_type": "VHS_VideoCombine",
     "_meta": {"title": "Save Output Video"}
   },
-  "6": {
-    "inputs": {
-      "width": 512,
-      "height": 512,
-      "batch_size": 16
-    },
-    "class_type": "EmptyLatentImage",
-    "_meta": {"title": "Empty Latent Image"}
-  },
   "7": {
     "inputs": {
-      "text": "a high quality photo of a woman, best quality",
+      "text": "a high quality photo of a woman, best quality, masterpiece",
       "clip": ["1", 1]
     },
     "class_type": "CLIPTextEncode",
@@ -56,7 +47,7 @@
   },
   "8": {
     "inputs": {
-      "text": "ugly, blurry, low quality",
+      "text": "ugly, blurry, low quality, deformed, worst quality",
       "clip": ["1", 1]
     },
     "class_type": "CLIPTextEncode",
@@ -77,7 +68,7 @@
       "cfg": 7,
       "sampler_name": "euler",
       "scheduler": "normal",
-      "denoise": 1,
+      "denoise": 0.6,
       "model": ["1", 0],
       "positive": ["7", 0],
       "negative": ["8", 0],
