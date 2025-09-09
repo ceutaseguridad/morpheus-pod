@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# --- Script de Configuración y Arranque Autónomo para Morpheus Pod v13.0 (Descarga Directa SDXL) ---
-# ESTRATEGIA: Se utiliza la arquitectura SDXL para máxima calidad. Los modelos se descargan
-# directamente desde sus fuentes originales (Hugging Face, Civitai) a través de un manifiesto 'modelos.txt'.
+# --- Script de Configuración y Arranque Autónomo para Morpheus Pod v14.0 (Coherencia de Nombres) ---
+# ESTRATEGIA: Se añade lógica para forzar un nombre de archivo estándar al descargar el LoRA de Civitai,
+# garantizando la coherencia entre el archivo descargado y el nombre referenciado en los workflows.
 
 # Salir inmediatamente si un comando falla
 set -e
@@ -57,10 +57,18 @@ if [ -f "$MODELS_FILE" ]; then
         DEST_PATH="/workspace/ComfyUI/models/$target_dir"
         mkdir -p "$DEST_PATH"
         
-        echo "Descargando de $url a $DEST_PATH..."
-        # Usamos `wget --content-disposition` para que guarde el archivo con el nombre
-        # que el servidor sugiere (crucial para Civitai) o el nombre del final de la URL.
-        wget -nc --content-disposition -P "$DEST_PATH" "$url"
+        echo "Procesando URL: $url..."
+        
+        # Lógica especial para el LoRA de Civitai para forzar el nombre del archivo y garantizar coherencia.
+        if [[ "$url" == *"/api/download/models/417971"* ]]; then
+            FILENAME="detail_tweaker_xl.safetensors"
+            echo "URL de Civitai detectada. Forzando nombre de archivo a: $FILENAME"
+            # Usamos -O para especificar el nombre de archivo de salida.
+            wget -nc -O "$DEST_PATH/$FILENAME" "$url"
+        else
+            # Lógica estándar para Hugging Face y GitHub que usan nombres de archivo predecibles.
+            wget -nc --content-disposition -P "$DEST_PATH" "$url"
+        fi
     done < "$MODELS_FILE"
     echo "Descarga de modelos completada."
 else
