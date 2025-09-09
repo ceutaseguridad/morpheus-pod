@@ -10,15 +10,19 @@ transformers
 # --- [SECCIÓN DE FIJACIÓN DE VERSIONES (PINNING) PARA ESTABILIDAD] ---
 
 # Fija el "trío" compatible para resolver el conflicto torch/torchvision/torchaudio.
-# Estas versiones están garantizadas para funcionar juntas.
 torch==2.4.1
 torchvision==0.19.1
 torchaudio==2.4.1
 
 # Fija numpy a una versión compatible con opencv-python Y torch.
-# El error demostró que opencv-python requiere una versión <2.3.0.
 numpy==2.2.4
 
-# Dependencias que faltaban y que causaban ModuleNotFoundError, ahora explícitas.
+# Dependencias que faltaban y que causaban ModuleNotFoundError.
 torchsde
 opencv-python-headless
+librosa
+
+# Paquetes esenciales de ComfyUI y nodos que ahora se instalan vía pip.
+comfyui-workflow-templates
+comfyui-embedded-docs
+imageio-ffmpeg
