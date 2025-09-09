@@ -2,6 +2,6 @@
 # Formato: <subdirectorio_en_ComfyUI/models>,<URL_de_descarga>
 
 checkpoints,https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors
-loras,https://civitai.com/api/download/models/465640?type=Model&format=SafeTensor
+loras,https://drive.google.com/uc?export=download&id=1whzMnJFwsP_yiE2WIAlDEP4YBt21eiv-
 animatediff_models,https://huggingface.co/guoyww/animatediff/resolve/main/mm_sd_v15_v2.ckpt
 https://github.com/ceutaseguridad/ComfyUI-wav2lip
