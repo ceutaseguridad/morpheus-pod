@@ -1,7 +1,13 @@
-# modelos.txt v3.1 (Nombres de archivo estandarizados)
+# modelos.txt v4.0 (Estable y Controlado)
 # Formato: <subdirectorio_en_ComfyUI/models>,<URL_de_descarga>
 
+# --- Checkpoints ---
 checkpoints,https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors
-loras,https://drive.google.com/uc?export=download&id=1whzMnJFwsP_yiE2WIAlDEP4YBt21eiv-
+
+# --- LoRAs ---
+# Se reemplaza el enlace de Google Drive por el enlace estable de tu repositorio en Hugging Face.
+loras,https://huggingface.co/Jchack/morpheus/resolve/main/lcm_lora_sdxl.safetensors
+loras,https://huggingface.co/Jchack/morpheus/resolve/main/detailer-xl.safetensors
+
+# --- Otros Modelos ---
 animatediff_models,https://huggingface.co/guoyww/animatediff/resolve/main/mm_sd_v15_v2.ckpt
-https://github.com/ceutaseguridad/ComfyUI-wav2lip
