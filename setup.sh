@@ -1,8 +1,8 @@
-#!/bin-bash
+#!/bin/bash
 
-# --- Script de Configuración y Arranque Autónomo para Morpheus Pod v15.0 (Lógica Simplificada) ---
-# ESTRATEGIA: Al usar un manifiesto 'modelos.txt' con URLs controladas y estables (Hugging Face),
-# se elimina la necesidad de lógica condicional. Un único comando de descarga universal es suficiente.
+# --- Script de Configuración y Arranque Autónomo para Morpheus Pod v16.0 (Instalación de Dependencias Robusta) ---
+# ESTRATEGIA: Se implementa una recopilación inteligente de dependencias que lee los 'requirements.txt'
+# de ComfyUI y de todos los nodos personalizados, creando un único plan de instalación unificado.
 
 # Salir inmediatamente si un comando falla
 set -e
@@ -26,16 +26,34 @@ if [ ! -d "$CUSTOM_NODES_DIR/ComfyUI-VideoHelperSuite" ]; then git clone https:/
 if [ ! -d "$CUSTOM_NODES_DIR/ComfyUI-wav2lip" ]; then git clone https://github.com/ceutaseguridad/ComfyUI-wav2lip.git $CUSTOM_NODES_DIR/ComfyUI-wav2lip; fi
 if [ ! -d "$CUSTOM_NODES_DIR/comfyui-workflow-templates" ]; then git clone https://github.com/ceutaseguridad/comfyui_workflow_templates.git $CUSTOM_NODES_DIR/comfyui-workflow-templates; fi
 
-# --- FASE 3: SANEAMIENTO Y UNIFICACIÓN DE DEPENDENCIAS DE PYTHON ---
-echo ">>> [FASE 3/6] Saneando y unificando archivos de requisitos..."
+# --- FASE 3: RECOPILACIÓN INTELIGENTE DE DEPENDENCIAS DE PYTHON ---
+echo ">>> [FASE 3/6] Recopilando y unificando TODOS los archivos de requisitos..."
 COMFY_REQ_FILE="/workspace/ComfyUI/requirements.txt"
 MORPHEUS_REQ_FILE="/workspace/requirements_pod.txt"
 FINAL_REQ_FILE="/workspace/final_requirements.txt"
+TEMP_REQ_FILE="/tmp/temp_requirements.txt"
 
-grep -vE 'torch|pytorch-cuda|extra-index-url|comfyui-workflow-templates|comfyui-embedded-docs' "$COMFY_REQ_FILE" > /tmp/saneado_comfy_reqs.txt
-cat /tmp/saneado_comfy_reqs.txt "$MORPHEUS_REQ_FILE" > "$FINAL_REQ_FILE"
-rm /tmp/saneado_comfy_reqs.txt
-echo "Archivo de requisitos final y unificado creado."
+# 1. Empieza con nuestro archivo base, que fija las versiones críticas.
+cat "$MORPHEUS_REQ_FILE" > "$TEMP_REQ_FILE"
+
+# 2. Añade las dependencias de ComfyUI, saneando SOLO la línea de torch, que ya hemos fijado.
+#    Este grep es más preciso y no eliminará otras dependencias importantes.
+grep -vE '^torch==' "$COMFY_REQ_FILE" >> "$TEMP_REQ_FILE"
+
+# 3. Itera sobre CADA nodo personalizado, busca su requirements.txt y añádelo.
+echo "Buscando archivos de requisitos en nodos personalizados..."
+for dir in $CUSTOM_NODES_DIR/*/; do
+    if [ -f "${dir}requirements.txt" ]; then
+        echo "Añadiendo dependencias desde: ${dir}requirements.txt"
+        cat "${dir}requirements.txt" >> "$TEMP_REQ_FILE"
+    fi
+done
+
+# 4. Crea el archivo final eliminando duplicados (la última versión de cada paquete prevalecerá)
+#    y asegurando un formato limpio.
+awk '!seen[$0]++' "$TEMP_REQ_FILE" > "$FINAL_REQ_FILE"
+rm "$TEMP_REQ_FILE"
+echo "Archivo de requisitos final y unificado creado en $FINAL_REQ_FILE."
 
 # --- FASE 4: INSTALACIÓN DE DEPENDENCIAS DE PYTHON ---
 echo ">>> [FASE 4/6] Instalando todas las dependencias de Python..."
@@ -63,8 +81,6 @@ if [ -f "$MODELS_FILE" ]; then
         echo "Procesando URL: $url..."
         
         # Lógica de descarga universal y simplificada.
-        # Ya que todos los enlaces son de Hugging Face, todos respetan la cabecera 'content-disposition',
-        # lo que permite a wget determinar el nombre de archivo correcto automáticamente.
         wget -nc --content-disposition -P "$DEST_PATH" "$url"
         
     done < "$MODELS_FILE"
