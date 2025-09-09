@@ -1,8 +1,9 @@
 #!/bin/bash
 
-# --- Script de Configuración y Arranque Autónomo para Morpheus Pod v16.0 (Instalación de Dependencias Robusta) ---
-# ESTRATEGIA: Se implementa una recopilación inteligente de dependencias que lee los 'requirements.txt'
-# de ComfyUI y de todos los nodos personalizados, creando un único plan de instalación unificado.
+# --- Script de Configuración y Arranque Autónomo para Morpheus Pod v17.0 (Versión Estable) ---
+# ESTRATEGIA: Se implementa una recopilación inteligente de dependencias (FASE 3) y se corrige el
+# nombre del directorio de clonación de 'comfyui_workflow_templates' para que coincida con su
+# nombre de paquete Python, resolviendo el error de importación.
 
 # Salir inmediatamente si un comando falla
 set -e
@@ -24,7 +25,8 @@ if [ ! -d "$CUSTOM_NODES_DIR/ComfyUI-Manager" ]; then git clone https://github.c
 if [ ! -d "$CUSTOM_NODES_DIR/ComfyUI-AnimateDiff-Evolved" ]; then git clone https://github.com/ceutaseguridad/ComfyUI-AnimateDiff-Evolved.git $CUSTOM_NODES_DIR/ComfyUI-AnimateDiff-Evolved; fi
 if [ ! -d "$CUSTOM_NODES_DIR/ComfyUI-VideoHelperSuite" ]; then git clone https://github.com/ceutaseguridad/ComfyUI-VideoHelperSuite.git $CUSTOM_NODES_DIR/ComfyUI-VideoHelperSuite; fi
 if [ ! -d "$CUSTOM_NODES_DIR/ComfyUI-wav2lip" ]; then git clone https://github.com/ceutaseguridad/ComfyUI-wav2lip.git $CUSTOM_NODES_DIR/ComfyUI-wav2lip; fi
-if [ ! -d "$CUSTOM_NODES_DIR/comfyui-workflow-templates" ]; then git clone https://github.com/ceutaseguridad/comfyui_workflow_templates.git $CUSTOM_NODES_DIR/comfyui-workflow-templates; fi
+# [CORRECCIÓN CLAVE] El directorio de destino ahora usa guion bajo para coincidir con el nombre del paquete.
+if [ ! -d "$CUSTOM_NODES_DIR/comfyui_workflow_templates" ]; then git clone https://github.com/ceutaseguridad/comfyui_workflow_templates.git $CUSTOM_NODES_DIR/comfyui_workflow_templates; fi
 
 # --- FASE 3: RECOPILACIÓN INTELIGENTE DE DEPENDENCIAS DE PYTHON ---
 echo ">>> [FASE 3/6] Recopilando y unificando TODOS los archivos de requisitos..."
@@ -61,7 +63,6 @@ echo ">>> [FASE 4/6] Instalando todas las dependencias de Python..."
 echo "Dependencias de Python instaladas."
 
 # --- FASE 5: DESCARGA DE MODELOS DESDE EL MANIFIESTO ---
-# (Esta fase no cambia)
 echo ">>> [FASE 5/6] Descargando modelos de IA desde el manifiesto 'modelos.txt'..."
 MODELS_FILE="/workspace/modelos.txt"
 if [ -f "$MODELS_FILE" ]; then
