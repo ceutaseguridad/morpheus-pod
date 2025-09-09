@@ -37,7 +37,6 @@ TEMP_REQ_FILE="/tmp/temp_requirements.txt"
 cat "$MORPHEUS_REQ_FILE" > "$TEMP_REQ_FILE"
 
 # 2. Añade las dependencias de ComfyUI, saneando SOLO la línea de torch, que ya hemos fijado.
-#    Este grep es más preciso y no eliminará otras dependencias importantes.
 grep -vE '^torch==' "$COMFY_REQ_FILE" >> "$TEMP_REQ_FILE"
 
 # 3. Itera sobre CADA nodo personalizado, busca su requirements.txt y añádelo.
@@ -49,8 +48,7 @@ for dir in $CUSTOM_NODES_DIR/*/; do
     fi
 done
 
-# 4. Crea el archivo final eliminando duplicados (la última versión de cada paquete prevalecerá)
-#    y asegurando un formato limpio.
+# 4. Crea el archivo final eliminando duplicados y asegurando un formato limpio.
 awk '!seen[$0]++' "$TEMP_REQ_FILE" > "$FINAL_REQ_FILE"
 rm "$TEMP_REQ_FILE"
 echo "Archivo de requisitos final y unificado creado en $FINAL_REQ_FILE."
@@ -63,26 +61,19 @@ echo ">>> [FASE 4/6] Instalando todas las dependencias de Python..."
 echo "Dependencias de Python instaladas."
 
 # --- FASE 5: DESCARGA DE MODELOS DESDE EL MANIFIESTO ---
+# (Esta fase no cambia)
 echo ">>> [FASE 5/6] Descargando modelos de IA desde el manifiesto 'modelos.txt'..."
 MODELS_FILE="/workspace/modelos.txt"
 if [ -f "$MODELS_FILE" ]; then
     IFS=','
     while read -r target_dir url || [ -n "$target_dir" ]; do
-        # Saltar líneas vacías o comentarios
         [[ -z "$target_dir" || "$target_dir" == \#* ]] && continue
-        
-        # Limpiar espacios en blanco
         target_dir=$(echo "$target_dir" | xargs)
         url=$(echo "$url" | xargs)
-        
         DEST_PATH="/workspace/ComfyUI/models/$target_dir"
         mkdir -p "$DEST_PATH"
-        
         echo "Procesando URL: $url..."
-        
-        # Lógica de descarga universal y simplificada.
         wget -nc --content-disposition -P "$DEST_PATH" "$url"
-        
     done < "$MODELS_FILE"
     echo "Descarga de modelos completada."
 else
