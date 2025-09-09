@@ -1,32 +1,36 @@
 #!/bin/bash
 
-# --- Script de Arranque Inteligente para Morpheus Pod v1.1 (A Prueba de Fallos) ---
-# Se añade 'set -e' para garantizar que el script se detenga si cualquier comando falla.
+# --- Entrypoint Script for Morpheus Pod ---
+# Este script es el único punto de entrada del contenedor.
+# Centraliza la lógica de sincronización de código y la ejecución del setup.
 
-# Salir inmediatamente si un comando devuelve un estado de no-cero.
-set -e
+set -e # Salir inmediatamente si un comando falla
 
-# Navega al directorio de trabajo
+echo "--- [Morpheus Entrypoint] Iniciando secuencia de arranque... ---"
+
+# Navegar al directorio de trabajo
 cd /workspace
 
-echo ">>> [START] Iniciando secuencia de arranque de Morpheus..."
-
-# Lógica robusta para clonar el repositorio si no existe, o actualizarlo si ya existe.
-if [ -d ".git" ]; then
-    echo ">>> [GIT] Repositorio existente encontrado. Actualizando con 'git pull'..."
-    git reset --hard HEAD
-    git pull
-else
-    echo ">>> [GIT] No se encontró repositorio. Clonando desde GitHub..."
+# --- Lógica de Sincronización de Código (ahora dentro de un script robusto) ---
+echo "Sincronizando el repositorio de Morpheus..."
+if [ ! -d "/workspace/.git" ]; then
+    echo "Directorio .git no encontrado. Clonando el repositorio..."
+    # Clonar el contenido del repo en el directorio actual
     git clone https://github.com/ceutaseguridad/morpheus-pod.git .
-fi
-
-# Comprobación de que el setup.sh existe después de clonar/actualizar
-if [ -f "setup.sh" ]; then
-    echo ">>> [SETUP] 'setup.sh' encontrado. Transfiriendo control al script de configuración..."
-    chmod +x /workspace/setup.sh
-    bash /workspace/setup.sh
 else
-    echo ">>> [ERROR CRÍTICO] 'setup.sh' no se encontró. Abortando."
-    exit 1
+    echo "Repositorio existente. Forzando actualización a la última versión de 'main'..."
+    # Limpiar cualquier estado inconsistente y forzar la actualización
+    git fetch origin
+    git reset --hard origin/main
+    git clean -fdx # Elimina cualquier archivo no rastreado (logs, temporales) de arranques anteriores
 fi
+echo "Sincronización de código completada."
+
+# --- Ejecución del Script de Setup Principal ---
+# Ahora que el código está garantizado, ejecutamos el setup.
+echo "Lanzando el script de configuración principal (setup.sh)..."
+bash /workspace/setup.sh
+
+# El script setup.sh termina con "exec supervisord...", por lo que este script
+# cederá el control y el contenedor se mantendrá vivo.
+echo "--- [Morpheus Entrypoint] Secuencia de arranque finalizada. ---"
