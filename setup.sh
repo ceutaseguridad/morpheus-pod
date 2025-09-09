@@ -1,9 +1,8 @@
 #!/bin/bash
 
 # --- Script de Configuración y Arranque Autónomo para Morpheus Pod v17.0 (Versión Estable) ---
-# ESTRATEGIA: Se implementa una recopilación inteligente de dependencias (FASE 3) y se corrige el
-# nombre del directorio de clonación de 'comfyui_workflow_templates' para que coincida con su
-# nombre de paquete Python, resolviendo el error de importación.
+# ESTRATEGIA: Se implementa una recopilación inteligente de dependencias (FASE 3) y se elimina la
+# clonación de nodos que ahora son paquetes pip, resolviendo todos los errores de importación.
 
 # Salir inmediatamente si un comando falla
 set -e
@@ -25,8 +24,7 @@ if [ ! -d "$CUSTOM_NODES_DIR/ComfyUI-Manager" ]; then git clone https://github.c
 if [ ! -d "$CUSTOM_NODES_DIR/ComfyUI-AnimateDiff-Evolved" ]; then git clone https://github.com/ceutaseguridad/ComfyUI-AnimateDiff-Evolved.git $CUSTOM_NODES_DIR/ComfyUI-AnimateDiff-Evolved; fi
 if [ ! -d "$CUSTOM_NODES_DIR/ComfyUI-VideoHelperSuite" ]; then git clone https://github.com/ceutaseguridad/ComfyUI-VideoHelperSuite.git $CUSTOM_NODES_DIR/ComfyUI-VideoHelperSuite; fi
 if [ ! -d "$CUSTOM_NODES_DIR/ComfyUI-wav2lip" ]; then git clone https://github.com/ceutaseguridad/ComfyUI-wav2lip.git $CUSTOM_NODES_DIR/ComfyUI-wav2lip; fi
-# [CORRECCIÓN CLAVE] El directorio de destino ahora usa guion bajo para coincidir con el nombre del paquete.
-if [ ! -d "$CUSTOM_NODES_DIR/comfyui_workflow_templates" ]; then git clone https://github.com/ceutaseguridad/comfyui_workflow_templates.git $CUSTOM_NODES_DIR/comfyui_workflow_templates; fi
+# [CORRECCIÓN CLAVE] Se ELIMINA la línea de 'git clone' para comfyui-workflow-templates. Ahora se gestiona como un paquete pip.
 
 # --- FASE 3: RECOPILACIÓN INTELIGENTE DE DEPENDENCIAS DE PYTHON ---
 echo ">>> [FASE 3/6] Recopilando y unificando TODOS los archivos de requisitos..."
