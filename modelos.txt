@@ -1,8 +1,8 @@
-# modelos.txt v3.0 (Arquitectura SDXL - Descarga Directa)
+# modelos.txt v3.1 (Nombres de archivo estandarizados)
 # Formato: <subdirectorio_en_ComfyUI/models>,<URL_de_descarga>
 
 checkpoints,https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors
-loras,https://civitai.com/api/download/models/417971?filename=Tangbohu-Detail-Tweaker-XL(XL).safetensors
+loras,https://civitai.com/api/download/models/417971
 animatediff_models,https://huggingface.co/guoyww/animatediff/resolve/main/mm_sd_v15_v2.ckpt
 wav2lip,https://github.com/ceutaseguridad/Wav2Lip/releases/download/models/wav2lip.pth
 wav2lip,https://github.com/ceutaseguridad/Wav2Lip/releases/download/models/wav2lip_gan.pth
