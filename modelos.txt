@@ -6,7 +6,6 @@ checkpoints,https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/reso
 
 # --- LoRAs ---
 # Se reemplaza el enlace de Google Drive por el enlace estable de tu repositorio en Hugging Face.
-loras,https://huggingface.co/Jchack/morpheus/resolve/main/lcm_lora_sdxl.safetensors
 loras,https://huggingface.co/Jchack/morpheus/resolve/main/detailer-xl.safetensors
 
 # --- Otros Modelos ---
