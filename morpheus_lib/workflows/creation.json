@@ -63,7 +63,7 @@
   },
   "10": {
     "inputs": {
-      "lora_name": "Tangbohu-Detail-Tweaker-XL(XL).safetensors",
+      "lora_name": "detail_tweaker_xl.safetensors",
       "strength_model": 0.8,
       "strength_clip": 0.8,
       "model": [ "4", 0 ],
