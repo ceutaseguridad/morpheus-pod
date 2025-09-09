@@ -1,0 +1,1 @@
+bash -c 'cd /workspace && if [ ! -d ".git" ]; then git clone https://github.com/ceutaseguridad/morpheus-pod.git .; else git fetch origin && git reset --hard origin/main && git clean -fdx; fi && chmod +x setup.sh && bash setup.sh'
