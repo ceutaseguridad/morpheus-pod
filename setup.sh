@@ -1,8 +1,8 @@
-#!/bin/bash
+#!/bin-bash
 
-# --- Script de Configuración y Arranque Autónomo para Morpheus Pod v14.0 (Coherencia de Nombres) ---
-# ESTRATEGIA: Se añade lógica para forzar un nombre de archivo estándar al descargar el LoRA de Civitai,
-# garantizando la coherencia entre el archivo descargado y el nombre referenciado en los workflows.
+# --- Script de Configuración y Arranque Autónomo para Morpheus Pod v15.0 (Lógica Simplificada) ---
+# ESTRATEGIA: Al usar un manifiesto 'modelos.txt' con URLs controladas y estables (Hugging Face),
+# se elimina la necesidad de lógica condicional. Un único comando de descarga universal es suficiente.
 
 # Salir inmediatamente si un comando falla
 set -e
@@ -50,25 +50,23 @@ MODELS_FILE="/workspace/modelos.txt"
 if [ -f "$MODELS_FILE" ]; then
     IFS=','
     while read -r target_dir url || [ -n "$target_dir" ]; do
+        # Saltar líneas vacías o comentarios
         [[ -z "$target_dir" || "$target_dir" == \#* ]] && continue
         
+        # Limpiar espacios en blanco
         target_dir=$(echo "$target_dir" | xargs)
         url=$(echo "$url" | xargs)
+        
         DEST_PATH="/workspace/ComfyUI/models/$target_dir"
         mkdir -p "$DEST_PATH"
         
         echo "Procesando URL: $url..."
         
-        # Lógica especial para el LoRA de Civitai para forzar el nombre del archivo y garantizar coherencia.
-        if [[ "$url" == *"/api/download/models/417971"* ]]; then
-            FILENAME="detail_tweaker_xl.safetensors"
-            echo "URL de Civitai detectada. Forzando nombre de archivo a: $FILENAME"
-            # Usamos -O para especificar el nombre de archivo de salida.
-            wget -nc -O "$DEST_PATH/$FILENAME" "$url"
-        else
-            # Lógica estándar para Hugging Face y GitHub que usan nombres de archivo predecibles.
-            wget -nc --content-disposition -P "$DEST_PATH" "$url"
-        fi
+        # Lógica de descarga universal y simplificada.
+        # Ya que todos los enlaces son de Hugging Face, todos respetan la cabecera 'content-disposition',
+        # lo que permite a wget determinar el nombre de archivo correcto automáticamente.
+        wget -nc --content-disposition -P "$DEST_PATH" "$url"
+        
     done < "$MODELS_FILE"
     echo "Descarga de modelos completada."
 else
