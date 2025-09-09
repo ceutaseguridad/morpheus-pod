@@ -7,15 +7,18 @@ Flask
 python-dotenv
 transformers
 
-# --- [SECCIÓN DE FIJACIÓN DE VERSIONES Y DEPENDENCIAS FALTANTES] ---
+# --- [SECCIÓN DE FIJACIÓN DE VERSIONES (PINNING) PARA ESTABILIDAD] ---
 
-# Fija las versiones para resolver el conflicto torch vs torchaudio
+# Fija el "trío" compatible para resolver el conflicto torch/torchvision/torchaudio.
+# Estas versiones están garantizadas para funcionar juntas.
 torch==2.4.1
-torchvision==0.22.1
+torchvision==0.19.1
 torchaudio==2.4.1
 
-# Dependencia que faltaba del error anterior (samplers de ComfyUI)
-torchsde
+# Fija numpy a una versión compatible con opencv-python Y torch.
+# El error demostró que opencv-python requiere una versión <2.3.0.
+numpy==2.2.4
 
-# Dependencia que faltaba para el nodo ComfyUI-VideoHelperSuite (cv2)
+# Dependencias que faltaban y que causaban ModuleNotFoundError, ahora explícitas.
+torchsde
 opencv-python-headless
