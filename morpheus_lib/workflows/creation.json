@@ -2,7 +2,7 @@
   "3": {
     "inputs": {
       "seed": 0,
-      "steps": 25,
+      "steps": 28,
       "cfg": 7.5,
       "sampler_name": "dpmpp_2m_sde_gpu",
       "scheduler": "karras",
@@ -16,7 +16,7 @@
     "_meta": { "title": "KSampler" }
   },
   "4": {
-    "inputs": { "ckpt_name": "v1-5-pruned-emaonly.safetensors" },
+    "inputs": { "ckpt_name": "sd_xl_base_1.0.safetensors" },
     "class_type": "CheckpointLoaderSimple",
     "_meta": { "title": "Load Checkpoint" }
   },
@@ -39,7 +39,7 @@
   },
   "7": {
     "inputs": {
-      "text": "ugly, blurry, low quality",
+      "text": "ugly, blurry, low quality, deformed",
       "clip": [ "10", 1 ]
     },
     "class_type": "CLIPTextEncode",
@@ -55,7 +55,7 @@
   },
   "9": {
     "inputs": {
-      "filename_prefix": "Morpheus_Result",
+      "filename_prefix": "Morpheus_Result_XL",
       "images": [ "8", 0 ]
     },
     "class_type": "SaveImage",
@@ -63,9 +63,9 @@
   },
   "10": {
     "inputs": {
-      "lora_name": "detail_tweaker.safetensors",
-      "strength_model": 1,
-      "strength_clip": 1,
+      "lora_name": "Tangbohu-Detail-Tweaker-XL(XL).safetensors",
+      "strength_model": 0.8,
+      "strength_clip": 0.8,
       "model": [ "4", 0 ],
       "clip": [ "4", 1 ]
     },
