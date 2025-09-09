@@ -1,4 +1,4 @@
-# worker_server.py (Versión 12.0 - Con Enrutador de Trabajos y Corrección de Semilla)
+# worker_server.py (Versión 13.0 - Encadenamiento Dinámico de LoRAs y Detección por Contexto)
 import logging
 import json
 import os
@@ -32,6 +32,20 @@ SERVER_ADDRESS = COMFYUI_URL.split("//")[1]
 MORPHEUS_LIB_DIR = "/workspace/morpheus_lib"
 job_status_db: Dict[str, Dict[str, Any]] = {}
 
+# --- [NUEVO] DICCIONARIO DE LORAS FUNCIONALES CONOCIDOS ---
+# Este es el único lugar para registrar nuevos LoRAs y sus triggers.
+KNOWN_FUNCTIONAL_LORAS = {
+    "lcm": {
+        "filename": "lcm_lora_sdxl.safetensors",
+        "keywords": ["rápido", "acelerar", "velocidad", "lcm", "instantáneo"]
+    },
+    "detailer": {
+        "filename": "detailer-xl.safetensors",
+        "keywords": ["detalle", "detallado", "mejorar", "calidad", "realismo", "texturas"]
+    }
+}
+
+
 # --- LÓGICA DE CARGA DINÁMICA DEL SYSTEM PROMPT ---
 MORPHEUS_SYSTEM_PROMPT = ""
 FALLBACK_PROMPT = "Eres un asistente de IA servicial."
@@ -50,7 +64,7 @@ except Exception as e:
     MORPHEUS_SYSTEM_PROMPT = FALLBACK_PROMPT
 
 
-app = FastAPI(title="Morpheus AI Pod", version="12.0")
+app = FastAPI(title="Morpheus AI Pod", version="13.0")
 
 # --- INICIALIZACIÓN ---
 @app.on_event("startup")
@@ -125,6 +139,16 @@ def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) 
                 elif "deepfake" in last_user_message_lower: new_context["current_workflow"] = "deepfake"
                 elif "lip-sync" in last_user_message_lower: new_context["current_workflow"] = "lipsync"
                 elif "composición" in last_user_message_lower: new_context["current_workflow"] = "composition"
+            
+            # --- [NUEVA LÓGICA] Detección de LoRAs funcionales ---
+            if new_context.get("current_workflow") == "creation":
+                new_context["collected_data"].setdefault("functional_loras", [])
+                for lora_key, lora_info in KNOWN_FUNCTIONAL_LORAS.items():
+                    if any(keyword in last_user_message_lower for keyword in lora_info["keywords"]):
+                        if lora_info["filename"] not in new_context["collected_data"]["functional_loras"]:
+                            new_context["collected_data"]["functional_loras"].append(lora_info["filename"])
+                            logger.info(f"Detectado trigger para LoRA funcional: {lora_info['filename']}")
+
             if "he seleccionado:" in last_user_message_lower:
                 selection = last_user_message.split('`')[1]
                 new_context["collected_data"]["actress_lora"] = selection
@@ -136,6 +160,7 @@ def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) 
                         new_context["collected_data"]["target_image_local_path"] = file_key
             elif new_context.get("current_workflow") == "creation" and "prompt" not in new_context["collected_data"]:
                 new_context["collected_data"]["prompt"] = last_user_message
+
         if last_system_message_obj and "Respuesta a la consulta 'actress_list': []" in last_system_message_obj.content:
             llm_prompt_instruction = "El usuario no tiene modelos de identidad disponibles. Infórmale amablemente que necesita instalar uno en la sección 'Recursos' antes de continuar y finaliza la conversación."
             new_context["current_workflow"] = None
@@ -244,12 +269,15 @@ def get_image(filename, subfolder, folder_type):
     with request.urlopen(f"{COMFYUI_URL}/view?{url_values}") as response: return response.read()
 def get_history(prompt_id):
     with request.urlopen(f"{COMFYUI_URL}/history/{prompt_id}") as response: return json.loads(response.read())
+
+# --- [FUNCIÓN MODIFICADA] Ahora con encadenamiento dinámico de LoRAs ---
 def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
+    # 1. Aplicar parámetros simples usando el mapa
     PARAM_MAP = {"prompt": ("CLIPTextEncode", "text"), "negative_prompt": ("CLIPTextEncode", "text"), "seed": ("KSampler", "seed"), "steps": ("KSampler", "steps"), "cfg_scale": ("KSampler", "cfg"), "sampler_name": ("KSampler", "sampler_name"), "width": ("EmptyLatentImage", "width"), "height": ("EmptyLatentImage", "height"), "actress_lora": ("LoraLoader", "lora_name"), "target_image_pod_path": ("LoadImage", "image"), "target_video_pod_path": ("VHS_VideoLoader", "video"), "source_media_pod_path": ("LoadImage", "image"), "audio_pod_path": ("LoadAudio", "audio_file")}
     for key, value in payload.items():
         if key in PARAM_MAP:
             node_class, input_name = PARAM_MAP[key]
-            for node in workflow_data.values():
+            for node_id, node in workflow_data.items():
                 meta_title = node.get("_meta", {}).get("title", "").lower()
                 is_correct_node = False
                 if node.get("class_type") == node_class:
@@ -260,7 +288,55 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
                 if is_correct_node:
                     if node_class in ["LoadImage", "VHS_VideoLoader", "LoadAudio"]: node["inputs"][input_name] = os.path.basename(value)
                     else: node["inputs"][input_name] = value
+
+    # 2. [NUEVO] Encadenar LoRAs funcionales dinámicamente
+    functional_loras = payload.get("functional_loras", [])
+    if functional_loras:
+        logger.info(f"Encadenando LoRAs funcionales: {functional_loras}")
+        
+        # Encontrar el KSampler y su fuente de modelo/clip original
+        k_sampler_node_id = next((nid for nid, n in workflow_data.items() if n["class_type"] == "KSampler"), None)
+        if not k_sampler_node_id: return workflow_data # No se puede continuar sin KSampler
+
+        # La fuente de modelo/clip es a lo que el KSampler está conectado
+        last_model_output = workflow_data[k_sampler_node_id]["inputs"]["model"]
+        last_clip_output = workflow_data[k_sampler_node_id]["inputs"]["positive"][0] # Asume que el clip positivo es la fuente
+        
+        lora_chain_counter = 1
+        for lora_filename in functional_loras:
+            new_lora_node_id = f"dynamic_lora_loader_{lora_chain_counter}"
+            
+            # Crear un nuevo nodo LoraLoader
+            new_lora_node = {
+                "inputs": {
+                    "model": last_model_output,
+                    "clip": last_clip_output,
+                    "lora_name": lora_filename,
+                    "strength_model": 0.8, # Puedes ajustar estos valores
+                    "strength_clip": 0.8
+                },
+                "class_type": "LoraLoader",
+                "_meta": {"title": f"Dynamic LoRA: {lora_filename}"}
+            }
+            
+            # Añadir el nuevo nodo al workflow
+            workflow_data[new_lora_node_id] = new_lora_node
+            
+            # La salida de este LoRA se convierte en la entrada del siguiente
+            last_model_output = [new_lora_node_id, 0]
+            last_clip_output = [new_lora_node_id, 1]
+            
+            lora_chain_counter += 1
+            
+        # Reconectar el KSampler para que use la salida de la cadena de LoRAs
+        workflow_data[k_sampler_node_id]["inputs"]["model"] = last_model_output
+        # Asumimos que el clip positivo y negativo deben ser reconectados
+        workflow_data[k_sampler_node_id]["inputs"]["positive"][0] = last_clip_output
+        workflow_data[k_sampler_node_id]["inputs"]["negative"][0] = last_clip_output
+        logger.info("KSampler reconectado a la salida de la cadena de LoRAs.")
+
     return workflow_data
+
 
 def run_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str, Any]):
     try:
