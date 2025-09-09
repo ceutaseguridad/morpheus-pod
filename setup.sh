@@ -82,4 +82,4 @@ fi
 # --- FASE 6: EJECUCIÓN ---
 echo ">>> [FASE 6/6] Configuración completa. Iniciando los servicios con Supervisor..."
 mkdir -p /workspace/logs
-exec /usr/bin/supervisord -n -c /workspace/supervisor.conf
+/usr/bin/supervisord -c /workspace/supervisor.conf
