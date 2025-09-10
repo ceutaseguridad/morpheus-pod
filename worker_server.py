@@ -445,3 +445,19 @@ async def get_job_status(client_id: str):
     if client_id not in job_status_db:
         raise HTTPException(status_code=404, detail="ID de trabajo no encontrado.")
     return {"id": client_id, **job_status_db[client_id]}
+CHECKPOINTS_PATH = "/workspace/ComfyUI/models/checkpoints"
+
+# Asegurarse de que el directorio existe para evitar errores
+os.makedirs(CHECKPOINTS_PATH, exist_ok=True)
+
+@app.get("/models/checkpoints", response_model=List[str])
+async def list_checkpoints():
+    """Devuelve una lista de todos los modelos de checkpoint disponibles, buscando en subdirectorios."""
+    found_files = []
+    extensions = ('.safetensors', '.ckpt', '.pt', '.pth')
+    for root, _, files in os.walk(CHECKPOINTS_PATH):
+        for file in files:
+            if file.endswith(extensions):
+                relative_path = os.path.relpath(os.path.join(root, file), CHECKPOINTS_PATH)
+                found_files.append(relative_path.replace("\\", "/")) # Asegurar formato de ruta Unix
+    return found_files
