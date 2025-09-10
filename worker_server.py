@@ -452,12 +452,18 @@ os.makedirs(CHECKPOINTS_PATH, exist_ok=True)
 
 @app.get("/models/checkpoints", response_model=List[str])
 async def list_checkpoints():
-    """Devuelve una lista de todos los modelos de checkpoint disponibles, buscando en subdirectorios."""
+    """Devuelve una lista de los modelos de checkpoint principales, ignorando subcomponentes."""
     found_files = []
     extensions = ('.safetensors', '.ckpt', '.pt', '.pth')
-    for root, _, files in os.walk(CHECKPOINTS_PATH):
+    # Directorios de componentes a ignorar
+    ignore_dirs = {'vae', 'unet', 'text_encoder', 'text_encoder_2', 'scheduler', 'tokenizer'}
+    
+    for root, dirs, files in os.walk(CHECKPOINTS_PATH):
+        # Modificar la lista de directorios 'in-place' para evitar explorarlos
+        dirs[:] = [d for d in dirs if d not in ignore_dirs]
+        
         for file in files:
             if file.endswith(extensions):
                 relative_path = os.path.relpath(os.path.join(root, file), CHECKPOINTS_PATH)
-                found_files.append(relative_path.replace("\\", "/")) # Asegurar formato de ruta Unix
+                found_files.append(relative_path.replace("\\", "/"))
     return found_files
