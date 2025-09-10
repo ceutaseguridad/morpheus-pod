@@ -6,6 +6,8 @@ gunicorn
 Flask
 python-dotenv
 transformers
+protobuf
+accelerate
 
 # --- [SECCIÓN DE FIJACIÓN DE VERSIONES (PINNING) PARA ESTABILIDAD] ---
 
