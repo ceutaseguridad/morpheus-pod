@@ -1,4 +1,4 @@
-# worker_server.py (Versión 13.1 - Selección Dinámica de Checkpoints)
+# worker_server.py (Versión 13.2 - Bypass de LoRA y Fusión de Prompt)
 import logging
 import json
 import os
@@ -7,23 +7,19 @@ import threading
 import torch
 from transformers import pipeline, AutoTokenizer
 from fastapi import FastAPI, Response, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
 from urllib import request, parse
 import websocket
 import asyncio
-import re
 import random
 import sys
 
-# --- LÍNEA AÑADIDA: Importar el manejador de gestión ---
 from morpheus_lib import management_handler
 
-# --- CONFIGURACIÓN DE LOGGING ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
 logger = logging.getLogger("MorpheusPodServer")
 
-# --- VARIABLES GLOBALES ---
 llm_pipeline = None
 MORPHEUS_AI_MODEL_ID = "ehartford/dolphin-2.2.1-mistral-7b"
 CONVERSATION_HISTORY_WINDOW = 10
@@ -32,8 +28,6 @@ SERVER_ADDRESS = COMFYUI_URL.split("//")[1]
 MORPHEUS_LIB_DIR = "/workspace/morpheus_lib"
 job_status_db: Dict[str, Dict[str, Any]] = {}
 
-# --- [NUEVO] DICCIONARIO DE LORAS FUNCIONALES CONOCIDOS ---
-# Este es el único lugar para registrar nuevos LoRAs y sus triggers.
 KNOWN_FUNCTIONAL_LORAS = {
     "lcm": {
         "filename": "lcm_lora_sdxl.safetensors",
@@ -45,28 +39,20 @@ KNOWN_FUNCTIONAL_LORAS = {
     }
 }
 
-
-# --- LÓGICA DE CARGA DINÁMICA DEL SYSTEM PROMPT ---
 MORPHEUS_SYSTEM_PROMPT = ""
 FALLBACK_PROMPT = "Eres un asistente de IA servicial."
-
 PROMPT_FILE_PATH = os.path.join(os.path.dirname(__file__), 'morpheus_system_prompt.txt')
 
 try:
     with open(PROMPT_FILE_PATH, 'r', encoding='utf-8') as f:
         MORPHEUS_SYSTEM_PROMPT = f.read().strip()
     logger.info(f"System Prompt por defecto cargado con éxito desde '{PROMPT_FILE_PATH}'.")
-except FileNotFoundError:
-    logger.critical(f"¡CRÍTICO! No se encontró el archivo de prompt en '{PROMPT_FILE_PATH}'. Se usará un prompt de respaldo.")
-    MORPHEUS_SYSTEM_PROMPT = FALLBACK_PROMPT
 except Exception as e:
-    logger.critical(f"¡CRÍTICO! Error al leer el archivo de prompt: {e}. Se usará un prompt de respaldo.", exc_info=True)
+    logger.critical(f"¡CRÍTICO! No se pudo leer el archivo de prompt: {e}. Se usará un prompt de respaldo.", exc_info=True)
     MORPHEUS_SYSTEM_PROMPT = FALLBACK_PROMPT
 
+app = FastAPI(title="Morpheus AI Pod", version="13.2")
 
-app = FastAPI(title="Morpheus AI Pod", version="13.1")
-
-# --- INICIALIZACIÓN ---
 @app.on_event("startup")
 async def startup_event():
     logger.info("Evento de arranque de FastAPI detectado. Iniciando carga del modelo en segundo plano.")
@@ -86,19 +72,20 @@ def initialize_llm_background():
     except Exception as e:
         logger.critical(f"HILO SECUNDARIO: FALLO CRÍTICO al cargar el modelo de IA: {e}", exc_info=True)
 
-# --- MODELOS PYDANTIC ---
 class ChatMessage(BaseModel):
     role: str
     content: str
+
 class ChatPayload(BaseModel):
     messages: List[ChatMessage]
     context: Dict[str, Any]
+
 class ActionData(BaseModel):
     details: Optional[str] = None; info_type: Optional[str] = None; file_type: Optional[str] = None; job_id: Optional[str] = None; label: Optional[str] = None; options: Optional[List[str]] = None; file_types: Optional[List[str]] = None; key: Optional[str] = None; job_name: Optional[str] = None; job_type: Optional[str] = None; workflow: Optional[str] = None; config_payload: Optional[Dict[str, Any]] = None
+
 class ChatResponse(BaseModel):
     response_text: str; action: str; action_data: ActionData; context: Optional[Dict[str, Any]]
 
-# --- LÓGICA DE MANEJADORES DE FLUJO DE TRABAJO ---
 def _handle_creation_flow(context: Dict[str, Any]) -> (str, Dict[str, Any], str):
     collected_data = context.get("collected_data", {})
     if "prompt" not in collected_data:
@@ -117,7 +104,6 @@ def _handle_deepfake_flow(context: Dict[str, Any]) -> (str, Dict[str, Any], str)
         return "request_local_info", {"info_type": "actress_list"}, "Archivo recibido. Ahora, por favor, dime qué modelo de identidad (LoRA) quieres usar para el reemplazo facial."
     return "launch_workflow", {}, "¡Perfecto! Tengo el archivo y el modelo. Iniciando el trabajo de deepfake."
 
-# --- FUNCIÓN PRINCIPAL RE-ARQUITECTADA ---
 def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) -> Dict[str, Any]:
     if not llm_pipeline:
         return {"response_text": "El modelo de IA de la Conciencia aún está inicializándose...", "action": "wait_for_user", "action_data": {}, "context": context}
@@ -204,20 +190,20 @@ def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) 
     final_response = {"response_text": raw_response_text, "action": action, "action_data": action_data, "context": new_context}
     return final_response
 
-# --- ENDPOINTS DE LA API ---
 @app.post("/chat", response_model=ChatResponse)
 async def handle_chat(payload: ChatPayload):
     loop = asyncio.get_running_loop()
     response_data = await loop.run_in_executor(None, get_morpheus_response, payload.messages, payload.context)
     return response_data
+
 @app.get("/")
 def read_root():
     return {"Morpheus Pod (Músculo y Conciencia)": "Online"}
+
 @app.get("/health")
 def health_check():
     return Response(status_code=200)
 
-# --- GESTIÓN DE RECURSOS ---
 CHECKPOINTS_PATH = "/workspace/ComfyUI/models/checkpoints"
 LORA_MODELS_PATH = "/workspace/ComfyUI/models/loras"
 RVC_MODELS_PATH = "/workspace/ComfyUI/models/rvc"
@@ -227,7 +213,6 @@ os.makedirs(LORA_MODELS_PATH, exist_ok=True)
 os.makedirs(RVC_MODELS_PATH, exist_ok=True)
 
 def list_files_in_dir(directory: str, extensions: tuple, ignore_dirs: set = None) -> List[str]:
-    """Función de utilidad para listar archivos con ciertas extensiones, ignorando directorios."""
     if ignore_dirs is None:
         ignore_dirs = set()
     found_files = []
@@ -241,7 +226,6 @@ def list_files_in_dir(directory: str, extensions: tuple, ignore_dirs: set = None
 
 @app.get("/models/checkpoints", response_model=List[str])
 async def list_checkpoints():
-    """Devuelve una lista de los modelos de checkpoint principales, ignorando subcomponentes."""
     try:
         ignore_dirs = {'vae', 'unet', 'text_encoder', 'text_encoder_2', 'scheduler', 'tokenizer'}
         return list_files_in_dir(CHECKPOINTS_PATH, ('.safetensors', '.ckpt', '.pt', '.pth'), ignore_dirs=ignore_dirs)
@@ -258,7 +242,6 @@ async def list_loras():
 @app.delete("/models/loras/{lora_filename:path}")
 async def delete_lora(lora_filename: str):
     try:
-        # La ruta viene relativa, así que la unimos a la base
         file_path = os.path.join(LORA_MODELS_PATH, lora_filename)
         if os.path.exists(file_path):
             os.remove(file_path)
@@ -287,28 +270,29 @@ async def delete_rvc_model(rvc_filename: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-# --- LÓGICA DEL "MÚSCULO" (EJECUTOR DE TRABAJOS) ---
 class JobPayload(BaseModel):
     workflow: str
     worker_job_id: Optional[str] = None
     config_payload: Dict[str, Any] = {}
+
 class StatusResponse(BaseModel):
     id: str; status: str; output: Optional[Dict[str, Any]] = None; error: Optional[str] = None; progress: int = 0
+
 def queue_prompt(prompt: Dict[str, Any], client_id: str):
     p = {"prompt": prompt, "client_id": client_id}
     data = json.dumps(p).encode('utf-8')
     req = request.Request(f"{COMFYUI_URL}/prompt", data=data)
     return json.loads(request.urlopen(req).read())
+
 def get_image(filename, subfolder, folder_type):
     data = {"filename": filename, "subfolder": subfolder, "type": folder_type}
     url_values = parse.urlencode(data)
     with request.urlopen(f"{COMFYUI_URL}/view?{url_values}") as response: return response.read()
+
 def get_history(prompt_id):
     with request.urlopen(f"{COMFYUI_URL}/history/{prompt_id}") as response: return json.loads(response.read())
 
 def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
-    # 1. Aplicar parámetros simples usando el mapa
     PARAM_MAP = {
         "checkpoint_name": ("CheckpointLoaderSimple", "ckpt_name"),
         "prompt": ("CLIPTextEncode", "text"), 
@@ -344,11 +328,38 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
                         node["inputs"][input_name] = value
                     logger.info(f"Parámetro aplicado: Nodo '{node_id}' ({node_class}), Input '{input_name}' = '{value}'")
 
-    # 2. Encadenar LoRAs funcionales dinámicamente
+    if "actress_lora" not in payload or not payload.get("actress_lora"):
+        logger.info("No se ha especificado un LoRA de identidad. Reconfigurando el workflow para hacer bypass.")
+        lora_node_id = next((nid for nid, n in workflow_data.items() if n.get("class_type") == "LoraLoader"), None)
+        k_sampler_node_id = next((nid for nid, n in workflow_data.items() if n.get("class_type") == "KSampler"), None)
+        
+        if lora_node_id and k_sampler_node_id:
+            lora_node = workflow_data[lora_node_id]
+            original_model_source = lora_node["inputs"]["model"]
+            original_clip_source = lora_node["inputs"]["clip"]
+            
+            workflow_data[k_sampler_node_id]["inputs"]["model"] = original_model_source
+            logger.info(f"KSampler (Nodo {k_sampler_node_id}) reconectado para usar el modelo de {original_model_source}")
+
+            for node_id, node in workflow_data.items():
+                if node.get("class_type") == "CLIPTextEncode":
+                    node["inputs"]["clip"] = original_clip_source
+                    logger.info(f"CLIPTextEncode (Nodo {node_id}) reconectado para usar el CLIP de {original_clip_source}")
+
+            del workflow_data[lora_node_id]
+            logger.info(f"Nodo LoraLoader (ID: {lora_node_id}) eliminado del workflow.")
+    
+    if payload.get("character_prompt"):
+        positive_prompt_node_id = next((nid for nid, n in workflow_data.items() if n.get("class_type") == "CLIPTextEncode" and "negative" not in n.get("_meta", {}).get("title", "").lower()), None)
+        if positive_prompt_node_id:
+            original_prompt = payload.get("prompt", "")
+            character_description = payload["character_prompt"]
+            workflow_data[positive_prompt_node_id]["inputs"]["text"] = f"{character_description}, {original_prompt}"
+            logger.info("Prompt de personaje fusionado con el prompt principal.")
+
     functional_loras = payload.get("functional_loras", [])
     if functional_loras:
         logger.info(f"Encadenando LoRAs funcionales: {functional_loras}")
-        
         k_sampler_node_id = next((nid for nid, n in workflow_data.items() if n["class_type"] == "KSampler"), None)
         if not k_sampler_node_id: return workflow_data
 
@@ -358,24 +369,14 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
         lora_chain_counter = 1
         for lora_filename in functional_loras:
             new_lora_node_id = f"dynamic_lora_loader_{lora_chain_counter}"
-            
             new_lora_node = {
-                "inputs": {
-                    "model": last_model_output,
-                    "clip": last_clip_output,
-                    "lora_name": lora_filename,
-                    "strength_model": 0.8,
-                    "strength_clip": 0.8
-                },
+                "inputs": { "model": last_model_output, "clip": last_clip_output, "lora_name": lora_filename, "strength_model": 0.8, "strength_clip": 0.8 },
                 "class_type": "LoraLoader",
                 "_meta": {"title": f"Dynamic LoRA: {lora_filename}"}
             }
-            
             workflow_data[new_lora_node_id] = new_lora_node
-            
             last_model_output = [new_lora_node_id, 0]
             last_clip_output = [new_lora_node_id, 1]
-            
             lora_chain_counter += 1
             
         workflow_data[k_sampler_node_id]["inputs"]["model"] = last_model_output
@@ -384,7 +385,6 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
         logger.info("KSampler reconectado a la salida de la cadena de LoRAs.")
 
     return workflow_data
-
 
 def run_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str, Any]):
     try:
