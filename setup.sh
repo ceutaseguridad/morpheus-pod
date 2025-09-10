@@ -1,3 +1,4 @@
+
 #!/bin/bash
 
 # --- Script de Configuración y Arranque Autónomo para Morpheus Pod v17.0 (Versión Estable) ---
