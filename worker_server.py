@@ -373,8 +373,9 @@ def run_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str,
             node_output = history['outputs'][node_id]
             if 'images' in node_output and not found_output:
                 image_info = node_output['images'][0]
-                image_data = get_image(image_info['filename'], image_info['subfolder'], image_info['type'])
-                output_path = os.path.join(output_dir, "result.png")
+                output_filename = image_info['filename'] # <-- Usamos el nombre de archivo real
+                image_data = get_image(output_filename, image_info['subfolder'], image_info['type'])
+                output_path = os.path.join(output_dir, output_filename) # <-- Usamos el nombre real para guardar
                 with open(output_path, "wb") as f: f.write(image_data)
                 found_output = True
             elif 'gifs' in node_output and not found_output:
