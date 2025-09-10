@@ -1,4 +1,4 @@
-# worker_server.py (Versión 13.0 - Encadenamiento Dinámico de LoRAs y Detección por Contexto)
+# worker_server.py (Versión 13.1 - Selección Dinámica de Checkpoints)
 import logging
 import json
 import os
@@ -64,7 +64,7 @@ except Exception as e:
     MORPHEUS_SYSTEM_PROMPT = FALLBACK_PROMPT
 
 
-app = FastAPI(title="Morpheus AI Pod", version="13.0")
+app = FastAPI(title="Morpheus AI Pod", version="13.1")
 
 # --- INICIALIZACIÓN ---
 @app.on_event("startup")
@@ -140,7 +140,6 @@ def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) 
                 elif "lip-sync" in last_user_message_lower: new_context["current_workflow"] = "lipsync"
                 elif "composición" in last_user_message_lower: new_context["current_workflow"] = "composition"
             
-            # --- [NUEVA LÓGICA] Detección de LoRAs funcionales ---
             if new_context.get("current_workflow") == "creation":
                 new_context["collected_data"].setdefault("functional_loras", [])
                 for lora_key, lora_info in KNOWN_FUNCTIONAL_LORAS.items():
@@ -219,37 +218,75 @@ def health_check():
     return Response(status_code=200)
 
 # --- GESTIÓN DE RECURSOS ---
+CHECKPOINTS_PATH = "/workspace/ComfyUI/models/checkpoints"
 LORA_MODELS_PATH = "/workspace/ComfyUI/models/loras"
 RVC_MODELS_PATH = "/workspace/ComfyUI/models/rvc"
+
+os.makedirs(CHECKPOINTS_PATH, exist_ok=True)
 os.makedirs(LORA_MODELS_PATH, exist_ok=True)
 os.makedirs(RVC_MODELS_PATH, exist_ok=True)
+
+def list_files_in_dir(directory: str, extensions: tuple, ignore_dirs: set = None) -> List[str]:
+    """Función de utilidad para listar archivos con ciertas extensiones, ignorando directorios."""
+    if ignore_dirs is None:
+        ignore_dirs = set()
+    found_files = []
+    for root, dirs, files in os.walk(directory):
+        dirs[:] = [d for d in dirs if d not in ignore_dirs]
+        for file in files:
+            if file.endswith(extensions):
+                relative_path = os.path.relpath(os.path.join(root, file), directory)
+                found_files.append(relative_path.replace("\\", "/"))
+    return found_files
+
+@app.get("/models/checkpoints", response_model=List[str])
+async def list_checkpoints():
+    """Devuelve una lista de los modelos de checkpoint principales, ignorando subcomponentes."""
+    try:
+        ignore_dirs = {'vae', 'unet', 'text_encoder', 'text_encoder_2', 'scheduler', 'tokenizer'}
+        return list_files_in_dir(CHECKPOINTS_PATH, ('.safetensors', '.ckpt', '.pt', '.pth'), ignore_dirs=ignore_dirs)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/models/loras", response_model=List[str])
 async def list_loras():
     try:
-        return [f for f in os.listdir(LORA_MODELS_PATH) if f.endswith(('.safetensors', '.pt', '.pth'))]
+        return list_files_in_dir(LORA_MODELS_PATH, ('.safetensors', '.pt', '.pth'))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-@app.delete("/models/loras/{lora_filename}")
+        
+@app.delete("/models/loras/{lora_filename:path}")
 async def delete_lora(lora_filename: str):
     try:
+        # La ruta viene relativa, así que la unimos a la base
         file_path = os.path.join(LORA_MODELS_PATH, lora_filename)
-        if os.path.exists(file_path): os.remove(file_path)
-        else: raise HTTPException(status_code=404, detail="El archivo del modelo no fue encontrado.")
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        else:
+            raise HTTPException(status_code=404, detail="El archivo del modelo no fue encontrado.")
         return {"message": "Modelo eliminado con éxito"}
-    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+        
 @app.get("/models/rvc", response_model=List[str])
 async def list_rvc_models():
     try:
-        return [f for f in os.listdir(RVC_MODELS_PATH) if f.endswith(('.pth', '.zip'))]
-    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
-@app.delete("/models/rvc/{rvc_filename}")
+        return list_files_in_dir(RVC_MODELS_PATH, ('.pth', '.zip'))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+        
+@app.delete("/models/rvc/{rvc_filename:path}")
 async def delete_rvc_model(rvc_filename: str):
     try:
         file_path = os.path.join(RVC_MODELS_PATH, rvc_filename)
-        if os.path.exists(file_path): os.remove(file_path)
-        else: raise HTTPException(status_code=404, detail="El archivo del modelo no fue encontrado.")
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        else:
+            raise HTTPException(status_code=404, detail="El archivo del modelo no fue encontrado.")
         return {"message": "Modelo eliminado con éxito"}
-    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # --- LÓGICA DEL "MÚSCULO" (EJECUTOR DE TRABAJOS) ---
 class JobPayload(BaseModel):
@@ -270,12 +307,27 @@ def get_image(filename, subfolder, folder_type):
 def get_history(prompt_id):
     with request.urlopen(f"{COMFYUI_URL}/history/{prompt_id}") as response: return json.loads(response.read())
 
-# --- [FUNCIÓN MODIFICADA] Ahora con encadenamiento dinámico de LoRAs ---
 def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
     # 1. Aplicar parámetros simples usando el mapa
-    PARAM_MAP = {"prompt": ("CLIPTextEncode", "text"), "negative_prompt": ("CLIPTextEncode", "text"), "seed": ("KSampler", "seed"), "steps": ("KSampler", "steps"), "cfg_scale": ("KSampler", "cfg"), "sampler_name": ("KSampler", "sampler_name"), "width": ("EmptyLatentImage", "width"), "height": ("EmptyLatentImage", "height"), "actress_lora": ("LoraLoader", "lora_name"), "target_image_pod_path": ("LoadImage", "image"), "target_video_pod_path": ("VHS_VideoLoader", "video"), "source_media_pod_path": ("LoadImage", "image"), "audio_pod_path": ("LoadAudio", "audio_file")}
+    PARAM_MAP = {
+        "checkpoint_name": ("CheckpointLoaderSimple", "ckpt_name"),
+        "prompt": ("CLIPTextEncode", "text"), 
+        "negative_prompt": ("CLIPTextEncode", "text"), 
+        "seed": ("KSampler", "seed"), 
+        "steps": ("KSampler", "steps"), 
+        "cfg_scale": ("KSampler", "cfg"), 
+        "sampler_name": ("KSampler", "sampler_name"), 
+        "width": ("EmptyLatentImage", "width"), 
+        "height": ("EmptyLatentImage", "height"), 
+        "actress_lora": ("LoraLoader", "lora_name"), 
+        "target_image_pod_path": ("LoadImage", "image"), 
+        "target_video_pod_path": ("VHS_VideoLoader", "video"), 
+        "source_media_pod_path": ("LoadImage", "image"), 
+        "audio_pod_path": ("LoadAudio", "audio_file")
+    }
+
     for key, value in payload.items():
-        if key in PARAM_MAP:
+        if key in PARAM_MAP and value is not None:
             node_class, input_name = PARAM_MAP[key]
             for node_id, node in workflow_data.items():
                 meta_title = node.get("_meta", {}).get("title", "").lower()
@@ -286,51 +338,47 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
                     if key == 'target_image_pod_path' and "target" not in meta_title: continue
                     is_correct_node = True
                 if is_correct_node:
-                    if node_class in ["LoadImage", "VHS_VideoLoader", "LoadAudio"]: node["inputs"][input_name] = os.path.basename(value)
-                    else: node["inputs"][input_name] = value
+                    if node_class in ["LoadImage", "VHS_VideoLoader", "LoadAudio"]: 
+                        node["inputs"][input_name] = os.path.basename(value)
+                    else: 
+                        node["inputs"][input_name] = value
+                    logger.info(f"Parámetro aplicado: Nodo '{node_id}' ({node_class}), Input '{input_name}' = '{value}'")
 
-    # 2. [NUEVO] Encadenar LoRAs funcionales dinámicamente
+    # 2. Encadenar LoRAs funcionales dinámicamente
     functional_loras = payload.get("functional_loras", [])
     if functional_loras:
         logger.info(f"Encadenando LoRAs funcionales: {functional_loras}")
         
-        # Encontrar el KSampler y su fuente de modelo/clip original
         k_sampler_node_id = next((nid for nid, n in workflow_data.items() if n["class_type"] == "KSampler"), None)
-        if not k_sampler_node_id: return workflow_data # No se puede continuar sin KSampler
+        if not k_sampler_node_id: return workflow_data
 
-        # La fuente de modelo/clip es a lo que el KSampler está conectado
         last_model_output = workflow_data[k_sampler_node_id]["inputs"]["model"]
-        last_clip_output = workflow_data[k_sampler_node_id]["inputs"]["positive"][0] # Asume que el clip positivo es la fuente
+        last_clip_output = workflow_data[k_sampler_node_id]["inputs"]["positive"][0]
         
         lora_chain_counter = 1
         for lora_filename in functional_loras:
             new_lora_node_id = f"dynamic_lora_loader_{lora_chain_counter}"
             
-            # Crear un nuevo nodo LoraLoader
             new_lora_node = {
                 "inputs": {
                     "model": last_model_output,
                     "clip": last_clip_output,
                     "lora_name": lora_filename,
-                    "strength_model": 0.8, # Puedes ajustar estos valores
+                    "strength_model": 0.8,
                     "strength_clip": 0.8
                 },
                 "class_type": "LoraLoader",
                 "_meta": {"title": f"Dynamic LoRA: {lora_filename}"}
             }
             
-            # Añadir el nuevo nodo al workflow
             workflow_data[new_lora_node_id] = new_lora_node
             
-            # La salida de este LoRA se convierte en la entrada del siguiente
             last_model_output = [new_lora_node_id, 0]
             last_clip_output = [new_lora_node_id, 1]
             
             lora_chain_counter += 1
             
-        # Reconectar el KSampler para que use la salida de la cadena de LoRAs
         workflow_data[k_sampler_node_id]["inputs"]["model"] = last_model_output
-        # Asumimos que el clip positivo y negativo deben ser reconectados
         workflow_data[k_sampler_node_id]["inputs"]["positive"][0] = last_clip_output
         workflow_data[k_sampler_node_id]["inputs"]["negative"][0] = last_clip_output
         logger.info("KSampler reconectado a la salida de la cadena de LoRAs.")
@@ -373,9 +421,9 @@ def run_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str,
             node_output = history['outputs'][node_id]
             if 'images' in node_output and not found_output:
                 image_info = node_output['images'][0]
-                output_filename = image_info['filename'] # <-- Usamos el nombre de archivo real
+                output_filename = image_info['filename']
                 image_data = get_image(output_filename, image_info['subfolder'], image_info['type'])
-                output_path = os.path.join(output_dir, output_filename) # <-- Usamos el nombre real para guardar
+                output_path = os.path.join(output_dir, output_filename)
                 with open(output_path, "wb") as f: f.write(image_data)
                 found_output = True
             elif 'gifs' in node_output and not found_output:
@@ -445,25 +493,3 @@ async def get_job_status(client_id: str):
     if client_id not in job_status_db:
         raise HTTPException(status_code=404, detail="ID de trabajo no encontrado.")
     return {"id": client_id, **job_status_db[client_id]}
-CHECKPOINTS_PATH = "/workspace/ComfyUI/models/checkpoints"
-
-# Asegurarse de que el directorio existe para evitar errores
-os.makedirs(CHECKPOINTS_PATH, exist_ok=True)
-
-@app.get("/models/checkpoints", response_model=List[str])
-async def list_checkpoints():
-    """Devuelve una lista de los modelos de checkpoint principales, ignorando subcomponentes."""
-    found_files = []
-    extensions = ('.safetensors', '.ckpt', '.pt', '.pth')
-    # Directorios de componentes a ignorar
-    ignore_dirs = {'vae', 'unet', 'text_encoder', 'text_encoder_2', 'scheduler', 'tokenizer'}
-    
-    for root, dirs, files in os.walk(CHECKPOINTS_PATH):
-        # Modificar la lista de directorios 'in-place' para evitar explorarlos
-        dirs[:] = [d for d in dirs if d not in ignore_dirs]
-        
-        for file in files:
-            if file.endswith(extensions):
-                relative_path = os.path.relpath(os.path.join(root, file), CHECKPOINTS_PATH)
-                found_files.append(relative_path.replace("\\", "/"))
-    return found_files
