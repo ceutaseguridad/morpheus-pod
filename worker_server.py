@@ -1,4 +1,4 @@
-# worker_server.py (Versión 13.2 - Bypass de LoRA y Fusión de Prompt)
+# worker_server.py (Versión 15.0 - Fine-Tuning Integrado)
 import logging
 import json
 import os
@@ -14,8 +14,19 @@ import websocket
 import asyncio
 import random
 import sys
+import shutil
+import subprocess
 
+# --- Importaciones existentes ---
 from morpheus_lib import management_handler
+
+# --- NUEVAS IMPORTACIONES PARA LÓGICA DE FINE-TUNING ---
+try:
+    import face_alignment
+    from skimage import io
+    FACE_ALIGNMENT_AVAILABLE = True
+except ImportError:
+    FACE_ALIGNMENT_AVAILABLE = False
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
 logger = logging.getLogger("MorpheusPodServer")
@@ -51,13 +62,29 @@ except Exception as e:
     logger.critical(f"¡CRÍTICO! No se pudo leer el archivo de prompt: {e}. Se usará un prompt de respaldo.", exc_info=True)
     MORPHEUS_SYSTEM_PROMPT = FALLBACK_PROMPT
 
-app = FastAPI(title="Morpheus AI Pod", version="13.2")
+app = FastAPI(title="Morpheus AI Pod", version="15.0")
+
+# --- NUEVO: Inicializar el modelo de detección facial en el arranque ---
+fa = None
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("Evento de arranque de FastAPI detectado. Iniciando carga del modelo en segundo plano.")
+    global fa
+    logger.info("Evento de arranque de FastAPI detectado. Iniciando carga de modelos en segundo plano.")
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, initialize_llm_background)
+    
+    if FACE_ALIGNMENT_AVAILABLE:
+        try:
+            logger.info("Cargando modelo de alineación facial (face-alignment)...")
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            fa = face_alignment.FaceAlignment(face_alignment.LandmarksType.TWO_D, flip_input=False, device=device)
+            logger.info("Modelo de alineación facial cargado con éxito.")
+        except Exception as e:
+            logger.critical(f"FALLO CRÍTICO al cargar el modelo de alineación facial: {e}", exc_info=True)
+            fa = None
+    else:
+        logger.warning("Librería 'face-alignment' no encontrada. El workflow de fine-tuning automático no estará disponible.")
 
 def initialize_llm_background():
     global llm_pipeline
@@ -470,6 +497,83 @@ def run_management_job_thread(client_id: str, workflow_type: str, config_payload
         logger.error(f"Fallo en run_management_job_thread para [Job ID: {client_id}]: {e}", exc_info=True)
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
+# --- NUEVA FUNCIÓN DE HILO PARA EL META-WORKFLOW ---
+def run_finetuning_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
+    job_dir = f"/workspace/job_data/{client_id}"
+    os.makedirs(job_dir, exist_ok=True)
+    
+    try:
+        job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 5, "output": None, "error": None}
+        
+        if workflow_type == "generate_and_modify_dataset":
+            # ETAPA 1.1: Generar dataset base
+            logger.info(f"[Job ID: {client_id}] Etapa 1.1: Generando dataset base...")
+            base_dataset_dir = os.path.join(job_dir, "base_dataset")
+            os.makedirs(base_dataset_dir, exist_ok=True)
+            
+            logger.warning(f"[Job ID: {client_id}] SIMULACIÓN: La generación real del dataset base y la modificación automática son placeholders en esta versión.")
+            
+            output_path = config_payload.get("input_path") 
+            if not output_path or not os.path.isdir(output_path):
+                 raise ValueError("La ruta al dataset de entrada no fue proporcionada o no es un directorio válido.")
+
+            job_status_db[client_id] = {"status": "COMPLETED", "output": {"dataset_path": output_path}, "error": None, "progress": 100}
+
+        elif workflow_type == "train_lora":
+            logger.info(f"[Job ID: {client_id}] Etapa 2: Iniciando entrenamiento de LoRA...")
+            job_status_db[client_id]["progress"] = 10
+            
+            dataset_path = config_payload.get("input_path")
+            output_lora_filename = config_payload.get("output_lora_filename")
+            training_steps = config_payload.get("training_steps", 1500)
+            
+            if not all([dataset_path, output_lora_filename]):
+                raise ValueError("Faltan parámetros críticos para el entrenamiento: input_path, output_lora_filename.")
+            
+            output_lora_path = os.path.join(LORA_MODELS_PATH, output_lora_filename)
+            training_output_dir = os.path.join(job_dir, "training_output")
+            os.makedirs(training_output_dir, exist_ok=True)
+            
+            # --- LÓGICA DE ENTRENAMIENTO REAL CON KOHYA_SS ---
+            command = [
+                "accelerate", "launch", "/workspace/kohya_ss/train_network.py",
+                f"--pretrained_model_name_or_path={os.path.join(CHECKPOINTS_PATH, 'sd_xl_base_1.0.safetensors')}",
+                f"--train_data_dir={dataset_path}",
+                f"--output_dir={training_output_dir}",
+                f"--output_name={output_lora_filename.replace('.safetensors', '')}",
+                "--network_module=networks.lora",
+                "--save_model_as=safetensors",
+                f"--max_train_steps={training_steps}",
+                "--learning_rate=1e-4",
+                "--optimizer_type=AdamW8bit",
+                "--mixed_precision=fp16",
+                "--xformers"
+            ]
+            
+            logger.info(f"[Job ID: {client_id}] Ejecutando comando: {' '.join(command)}")
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, universal_newlines=True)
+            
+            for line in process.stdout:
+                logger.info(f"[Kohya_ss - Job {client_id}] {line.strip()}")
+
+            process.wait()
+            
+            if process.returncode != 0:
+                raise RuntimeError(f"El proceso de entrenamiento falló con código {process.returncode}.")
+
+            final_lora_file = os.path.join(training_output_dir, output_lora_filename)
+            if os.path.exists(final_lora_file):
+                shutil.move(final_lora_file, output_lora_path)
+                logger.info(f"[Job ID: {client_id}] LoRA entrenado movido a: {output_lora_path}")
+            else:
+                raise FileNotFoundError(f"El archivo LoRA entrenado no se encontró: {final_lora_file}")
+            
+            job_status_db[client_id] = {"status": "COMPLETED", "output": {"lora_path": output_lora_path}, "error": None, "progress": 100}
+
+    except Exception as e:
+        logger.error(f"Fallo en run_finetuning_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
+        job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
+
 @app.post("/job")
 async def create_job(payload: JobPayload):
     client_id = payload.worker_job_id or str(uuid.uuid4())
@@ -477,10 +581,14 @@ async def create_job(payload: JobPayload):
     
     workflow_name = payload.workflow
     management_workflows = ["install_lora", "install_rvc"]
+    finetuning_workflows = ["generate_and_modify_dataset", "train_lora"]
 
     if workflow_name in management_workflows:
         logger.info(f"Enrutando trabajo [ID: {client_id}] al manejador de gestión para workflow: {workflow_name}")
         thread = threading.Thread(target=run_management_job_thread, args=(client_id, workflow_name, payload.config_payload))
+    elif workflow_name in finetuning_workflows:
+        logger.info(f"Enrutando trabajo [ID: {client_id}] al manejador de fine-tuning: {workflow_name}")
+        thread = threading.Thread(target=run_finetuning_job_thread, args=(client_id, workflow_name, payload.config_payload))
     else:
         logger.info(f"Enrutando trabajo [ID: {client_id}] al manejador de ComfyUI para workflow: {workflow_name}")
         thread = threading.Thread(target=run_job_thread, args=(client_id, workflow_name, payload.config_payload))
