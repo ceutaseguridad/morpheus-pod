@@ -33,3 +33,4 @@ imageio-ffmpeg
 face-alignment
 # Para entrenamiento de LoRA (esto instala la suite de Kohya)
 kohya_ss
+pyllow
