@@ -28,3 +28,8 @@ librosa
 comfyui-workflow-templates
 comfyui-embedded-docs
 imageio-ffmpeg
+
+# Para segmentación facial automática y creación de máscaras
+face-alignment
+# Para entrenamiento de LoRA (esto instala la suite de Kohya)
+kohya_ss
