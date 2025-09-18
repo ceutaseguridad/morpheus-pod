@@ -1,4 +1,4 @@
-# worker_server.py (Versión 19.0 - Meta-Workflow Reasoning)
+# worker_server.py (Versión 19.1 - Source Media Analysis)
 import logging
 import json
 import os
@@ -36,7 +36,6 @@ try:
 except ImportError:
     FACE_ALIGNMENT_AVAILABLE = False
 
-# [CAMBIO] Importamos la librería OpenCV para el análisis de vídeo.
 try:
     import cv2
     VIDEO_ANALYSIS_AVAILABLE = True
@@ -76,7 +75,7 @@ except Exception as e:
     MORPHEUS_SYSTEM_PROMPT = FALLBACK_PROMPT
 
 
-app = FastAPI(title="Morpheus AI Pod", version="19.0")
+app = FastAPI(title="Morpheus AI Pod", version="19.1")
 
 @app.on_event("startup")
 async def startup_event():
@@ -143,7 +142,6 @@ class ActionData(BaseModel):
     config_payload: Optional[Dict[str, Any]] = None
     name: Optional[str] = None; system_prompt: Optional[str] = None
     filters: Optional[Dict[str, Any]] = None; tags: Optional[List[str]] = None
-    # [NUEVO] Para manejar planes de múltiples pasos
     execution_plan: Optional[List[Dict[str, Any]]] = None
 
 class ChatResponse(BaseModel):
@@ -154,7 +152,6 @@ def _analyze_and_tag_image(image_path: str, config_payload: Dict[str, Any]) -> D
     if not all([vlm_processor, vlm_model, llm_pipeline]):
         logger.warning("Análisis visual omitido: uno o más modelos de IA no están listos.")
         return {}
-
     try:
         logger.info(f"Iniciando análisis visual para: {image_path}")
         raw_image = Image.open(image_path).convert('RGB')
@@ -186,16 +183,11 @@ def _analyze_and_tag_image(image_path: str, config_payload: Dict[str, Any]) -> D
         
         logger.info(f"Análisis visual completado para {os.path.basename(image_path)}. Tags: {final_metadata['tags']}")
         return final_metadata
-
     except Exception as e:
         logger.error(f"Error durante el análisis visual de la imagen: {e}", exc_info=True)
         return {"error": "Visual analysis failed.", "details": str(e)}
 
-# [CAMBIO] Nueva función para extraer la duración de un vídeo usando OpenCV.
 def _get_video_duration(video_path: str) -> float:
-    """
-    Calcula la duración de un archivo de vídeo en segundos.
-    """
     if not VIDEO_ANALYSIS_AVAILABLE:
         logger.warning("Librería OpenCV no disponible, no se puede obtener la duración del vídeo.")
         return 0.0
@@ -204,11 +196,9 @@ def _get_video_duration(video_path: str) -> float:
         if not cap.isOpened():
             logger.error(f"No se pudo abrir el vídeo para análisis de duración: {video_path}")
             return 0.0
-        
         frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
         fps = cap.get(cv2.CAP_PROP_FPS)
         cap.release()
-        
         if fps > 0:
             duration = frame_count / fps
             logger.info(f"Duración del vídeo '{os.path.basename(video_path)}' calculada: {duration:.2f} segundos.")
@@ -223,15 +213,11 @@ def _get_video_duration(video_path: str) -> float:
 def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) -> Dict[str, Any]:
     if not llm_pipeline:
         return {"response_text": "El modelo de IA de la Conciencia aún está inicializándose...", "action": "wait_for_user", "action_data": {}, "context": context}
-
     new_context = context.copy()
     last_user_message = next((m.content for m in reversed(messages) if m.role == 'user'), "")
-    
     is_confirming_plan = any(word in last_user_message.lower() for word in ["sí", "si", "procede", "confirmo", "hazlo", "adelante", "dale"])
-    
     if is_confirming_plan and new_context.get("current_plan_list"):
         plan = new_context["current_plan_list"]
-        
         if len(plan) == 1:
             action = "launch_workflow"
             action_data = plan[0] 
@@ -240,10 +226,8 @@ def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) 
             action = "launch_meta_workflow"
             action_data = {"execution_plan": plan} 
             response_text = "¡Excelente! Iniciando el plan de trabajo con múltiples pasos. Revisa el 'Monitor de Tareas' para ver cómo se crean."
-            
         new_context.pop("current_plan_list", None)
         return {"response_text": response_text, "action": action, "action_data": action_data, "context": new_context}
-
     workbench = new_context.get("workbench", {})
     situation_briefing = ""
     if workbench:
@@ -255,50 +239,36 @@ def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) 
                     metadata = json.loads(item["metadata_json"])
                     meta_info = f", Info: Es '{metadata.get('character', 'N/A')}', LoRA: '{metadata.get('lora_model', 'N/A')}'"
                     base_info += meta_info
-            except Exception:
-                pass 
+            except Exception: pass 
             situation_briefing += base_info + "\n"
         situation_briefing += "\n"
-    
     situation_briefing += f"**Petición del Usuario:** \"{last_user_message}\"\n\n"
     situation_briefing += "**Tu Tarea:** Analiza la situación y la petición. Formula un plan de acción claro y responde en el formato JSON OBLIGATORIO que se te ha indicado en tus instrucciones."
-
     system_prompt_to_use = new_context.get("system_prompt", MORPHEUS_SYSTEM_PROMPT)
-    
     tokenizer = llm_pipeline.tokenizer
-    conversation_for_planning = [
-        {"role": "system", "content": system_prompt_to_use},
-        {"role": "user", "content": situation_briefing}
-    ]
-    
+    conversation_for_planning = [{"role": "system", "content": system_prompt_to_use}, {"role": "user", "content": situation_briefing}]
     prompt = tokenizer.apply_chat_template(conversation_for_planning, tokenize=False, add_generation_prompt=True)
-    
     try:
         outputs = llm_pipeline(prompt, max_new_tokens=1024, do_sample=False, pad_token_id=tokenizer.eos_token_id)
         raw_llm_output = outputs[0]['generated_text'][len(prompt):].strip().replace("</s>", "")
-        
         json_start = raw_llm_output.find('{')
         json_end = raw_llm_output.rfind('}') + 1
         if json_start != -1:
             json_str = raw_llm_output[json_start:json_end]
             parsed_response = json.loads(json_str)
-            
             response_text = parsed_response["plan_description"]
             action = "wait_for_user"
             action_data = {}
             new_context["current_plan_list"] = parsed_response["execution_plan"]
-            
         else:
             response_text = "He tenido un problema formulando un plan. Esto es lo que pensé: " + raw_llm_output
             action = "wait_for_user"
             action_data = {}
-
     except Exception as e:
         logger.error(f"Error durante la inferencia o parseo del plan del LLM: {e}", exc_info=True)
         response_text = "He tenido un problema crítico procesando mi propio pensamiento..."
         action = "wait_for_user"
         action_data = {}
-
     final_response = {"response_text": response_text, "action": action, "action_data": action_data, "context": new_context}
     return final_response
 
@@ -306,20 +276,13 @@ def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) 
 async def handle_chat(payload: ChatPayload):
     response_data = get_morpheus_response(payload.messages, payload.context)
     action_data_obj = ActionData(**response_data.get("action_data", {}))
-    return ChatResponse(
-        response_text=response_data["response_text"],
-        action=response_data["action"],
-        action_data=action_data_obj,
-        context=response_data["context"]
-    )
+    return ChatResponse(response_text=response_data["response_text"], action=response_data["action"], action_data=action_data_obj, context=response_data["context"])
 
 @app.get("/")
-def read_root():
-    return {"Morpheus Pod (Músculo y Conciencia)": "Online"}
+def read_root(): return {"Morpheus Pod (Músculo y Conciencia)": "Online"}
 
 @app.get("/health")
-def health_check():
-    return Response(status_code=200)
+def health_check(): return Response(status_code=200)
 
 CHECKPOINTS_PATH = "/workspace/ComfyUI/models/checkpoints"
 LORA_MODELS_PATH = "/workspace/ComfyUI/models/loras"
@@ -330,8 +293,7 @@ os.makedirs(LORA_MODELS_PATH, exist_ok=True)
 os.makedirs(RVC_MODELS_PATH, exist_ok=True)
 
 def list_files_in_dir(directory: str, extensions: tuple, ignore_dirs: set = None) -> List[str]:
-    if ignore_dirs is None:
-        ignore_dirs = set()
+    if ignore_dirs is None: ignore_dirs = set()
     found_files = []
     for root, dirs, files in os.walk(directory):
         dirs[:] = [d for d in dirs if d not in ignore_dirs]
@@ -346,46 +308,35 @@ async def list_checkpoints():
     try:
         ignore_dirs = {'vae', 'unet', 'text_encoder', 'text_encoder_2', 'scheduler', 'tokenizer'}
         return list_files_in_dir(CHECKPOINTS_PATH, ('.safetensors', '.ckpt', '.pt', '.pth'), ignore_dirs=ignore_dirs)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/models/loras", response_model=List[str])
 async def list_loras():
-    try:
-        return list_files_in_dir(LORA_MODELS_PATH, ('.safetensors', '.pt', '.pth'))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    try: return list_files_in_dir(LORA_MODELS_PATH, ('.safetensors', '.pt', '.pth'))
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
         
 @app.delete("/models/loras/{lora_filename:path}")
 async def delete_lora(lora_filename: str):
     try:
         file_path = os.path.join(LORA_MODELS_PATH, lora_filename)
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        else:
-            raise HTTPException(status_code=404, detail="El archivo del modelo no fue encontrado.")
+        if os.path.exists(file_path): os.remove(file_path)
+        else: raise HTTPException(status_code=404, detail="El archivo del modelo no fue encontrado.")
         return {"message": "Modelo eliminado con éxito"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
         
 @app.get("/models/rvc", response_model=List[str])
 async def list_rvc_models():
-    try:
-        return list_files_in_dir(RVC_MODELS_PATH, ('.pth', '.zip'))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    try: return list_files_in_dir(RVC_MODELS_PATH, ('.pth', '.zip'))
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
         
 @app.delete("/models/rvc/{rvc_filename:path}")
 async def delete_rvc_model(rvc_filename: str):
     try:
         file_path = os.path.join(RVC_MODELS_PATH, rvc_filename)
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        else:
-            raise HTTPException(status_code=404, detail="El archivo del modelo no fue encontrado.")
+        if os.path.exists(file_path): os.remove(file_path)
+        else: raise HTTPException(status_code=404, detail="El archivo del modelo no fue encontrado.")
         return {"message": "Modelo eliminado con éxito"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 class JobPayload(BaseModel):
     workflow: str
@@ -415,24 +366,7 @@ def get_history(prompt_id):
     with request.urlopen(f"{COMFYUI_URL}/history/{prompt_id}") as response: return json.loads(response.read())
 
 def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
-    PARAM_MAP = {
-        "checkpoint_name": ("CheckpointLoaderSimple", "ckpt_name"),
-        "prompt": ("CLIPTextEncode", "text"), 
-        "negative_prompt": ("CLIPTextEncode", "text"), 
-        "seed": ("KSampler", "seed"), 
-        "steps": ("KSampler", "steps"), 
-        "cfg_scale": ("KSampler", "cfg"), 
-        "sampler_name": ("KSampler", "sampler_name"), 
-        "width": ("EmptyLatentImage", "width"), 
-        "height": ("EmptyLatentImage", "height"), 
-        "actress_lora": ("LoraLoader", "lora_name"), 
-        "target_image_pod_path": ("LoadImage", "image"), 
-        "mask_image_pod_path": ("LoadImage", "image"),
-        "target_video_pod_path": ("VHS_VideoLoader", "video"), 
-        "source_media_pod_path": ("LoadImage", "image"), 
-        "audio_pod_path": ("LoadAudio", "audio_file")
-    }
-
+    PARAM_MAP = {"checkpoint_name": ("CheckpointLoaderSimple", "ckpt_name"), "prompt": ("CLIPTextEncode", "text"), "negative_prompt": ("CLIPTextEncode", "text"), "seed": ("KSampler", "seed"), "steps": ("KSampler", "steps"), "cfg_scale": ("KSampler", "cfg"), "sampler_name": ("KSampler", "sampler_name"), "width": ("EmptyLatentImage", "width"), "height": ("EmptyLatentImage", "height"), "actress_lora": ("LoraLoader", "lora_name"), "target_image_pod_path": ("LoadImage", "image"), "mask_image_pod_path": ("LoadImage", "image"), "target_video_pod_path": ("VHS_VideoLoader", "video"), "source_media_pod_path": ("LoadImage", "image"), "audio_pod_path": ("LoadAudio", "audio_file")}
     for key, value in payload.items():
         if key in PARAM_MAP and value is not None:
             node_class, input_name = PARAM_MAP[key]
@@ -446,58 +380,36 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
                     if key == 'mask_image_pod_path' and "mask" not in meta_title: continue
                     is_correct_node = True
                 if is_correct_node:
-                    if node_class in ["LoadImage", "VHS_VideoLoader", "LoadAudio"]: 
-                        node["inputs"][input_name] = os.path.basename(value)
-                    else: 
-                        node["inputs"][input_name] = value
+                    if node_class in ["LoadImage", "VHS_VideoLoader", "LoadAudio"]: node["inputs"][input_name] = os.path.basename(value)
+                    else: node["inputs"][input_name] = value
                     logger.info(f"Parámetro aplicado: Nodo '{node_id}' ({node_class}), Input '{input_name}' = '{value}'")
     return workflow_data
 
 def run_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str, Any]):
     job_dir = f"/workspace/job_data/{client_id}"
     os.makedirs(job_dir, exist_ok=True)
-    
     try:
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 5, "output": None, "error": None}
-        
         workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", f"{workflow_name}.json")
-        with open(workflow_path, 'r') as f:
-            workflow_data = json.load(f)
-
+        with open(workflow_path, 'r') as f: workflow_data = json.load(f)
         updated_workflow = update_workflow_with_payload(workflow_data, config_payload)
         job_status_db[client_id]["progress"] = 20
-        
         output_files = run_comfyui_generation(updated_workflow, job_dir, client_id)
         job_status_db[client_id]["progress"] = 90
-        
         final_output = {}
         job_type = config_payload.get("job_type", "image")
-        
         if job_type == "image" and output_files:
             main_image_path = output_files[0]
             final_output["image_pod_path"] = main_image_path
-            
             metadata = _analyze_and_tag_image(main_image_path, config_payload)
-            if metadata:
-                final_output["metadata"] = metadata
-        
-        # [CAMBIO] Modificamos la lógica para la finalización de trabajos de vídeo.
+            if metadata: final_output["metadata"] = metadata
         elif job_type == "video" and output_files:
             main_video_path = output_files[0]
             final_output["video_pod_path"] = main_video_path
-            
-            # Obtenemos la duración y creamos un objeto de metadatos para el vídeo.
             duration = _get_video_duration(main_video_path)
             production_metadata = config_payload.get("production_metadata", {})
-            final_output["metadata"] = {
-                "project": production_metadata.get("project_name", "Sin Proyecto"),
-                "character": production_metadata.get("actress_name"),
-                "workflow": production_metadata.get("workflow_type"),
-                "duration_seconds": duration
-             }
-
+            final_output["metadata"] = {"project": production_metadata.get("project_name", "Sin Proyecto"), "character": production_metadata.get("actress_name"), "workflow": production_metadata.get("workflow_type"), "duration_seconds": duration}
         job_status_db[client_id] = {"status": "COMPLETED", "output": final_output, "error": None, "progress": 100}
-
     except Exception as e:
         logger.error(f"Fallo en run_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
@@ -505,37 +417,48 @@ def run_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str,
 def run_management_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
     try:
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
-        
         url = config_payload.get('url')
         filename = config_payload.get('filename')
-        
         def update_status_callback(progress=None, status_text=None):
-            if progress is not None:
-                job_status_db[client_id]['progress'] = progress
-        
+            if progress is not None: job_status_db[client_id]['progress'] = progress
         installed_path = management_handler.handle_install(workflow_type, url, filename, update_status_callback)
-        
         job_status_db[client_id] = {"status": "COMPLETED", "output": {"installed_path": installed_path}, "error": None, "progress": 100}
-
     except Exception as e:
         logger.error(f"Fallo en run_management_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
+        job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
+
+# [CAMBIO] Nueva función de hilo para manejar el análisis de assets de origen.
+def run_analysis_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
+    try:
+        job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
+        source_pod_path = config_payload.get('source_media_pod_path')
+        if not source_pod_path or not os.path.exists(source_pod_path):
+            raise FileNotFoundError(f"El archivo de origen '{source_pod_path}' no se encontró en el pod.")
+        
+        job_status_db[client_id]["progress"] = 50
+        
+        # Simplemente llamamos a la función de análisis de imágenes, ya que es la única que tenemos
+        # para extraer metadatos visuales. Para vídeos, se podría extraer un frame y analizarlo.
+        metadata = _analyze_and_tag_image(source_pod_path, {})
+        
+        job_status_db[client_id]["progress"] = 90
+        job_status_db[client_id] = {"status": "COMPLETED", "output": {"metadata": metadata}, "error": None, "progress": 100}
+        
+    except Exception as e:
+        logger.error(f"Fallo en run_analysis_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
 def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str) -> List[str]:
     ws = websocket.WebSocket()
     ws.connect(f"ws://{SERVER_ADDRESS}/ws?clientId={client_id}")
-    
     prompt_id = queue_prompt(workflow_json, client_id)['prompt_id']
     output_images = []
-
     try:
         while True:
             out = ws.recv()
             if isinstance(out, str):
                 message = json.loads(out)
-                if message['type'] == 'executing' and message['data']['node'] is None and message['data']['prompt_id'] == prompt_id:
-                    break
-        
+                if message['type'] == 'executing' and message['data']['node'] is None and message['data']['prompt_id'] == prompt_id: break
         history = get_history(prompt_id)[prompt_id]
         for node_id in history['outputs']:
             node_output = history['outputs'][node_id]
@@ -544,40 +467,22 @@ def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str)
                     image_data = get_image(image_info['filename'], image_info['subfolder'], image_info['type'])
                     unique_filename = f"{uuid.uuid4()}_{image_info['filename']}"
                     output_path = os.path.join(output_dir, unique_filename)
-                    with open(output_path, "wb") as f:
-                        f.write(image_data)
+                    with open(output_path, "wb") as f: f.write(image_data)
                     output_images.append(output_path)
-    finally:
-        ws.close()
-
-    if not output_images:
-        raise RuntimeError(f"El workflow de ComfyUI (Prompt ID: {prompt_id}) no produjo ninguna imagen de salida.")
+    finally: ws.close()
+    if not output_images: raise RuntimeError(f"El workflow de ComfyUI (Prompt ID: {prompt_id}) no produjo ninguna imagen de salida.")
     return output_images
 
 def create_feature_mask(image_path: str, feature: str, output_path: str):
-    if not fa:
-        raise RuntimeError("El modelo de Face Alignment no está disponible.")
-    
+    if not fa: raise RuntimeError("El modelo de Face Alignment no está disponible.")
     input_image = io.imread(image_path)
-    if input_image.shape[-1] == 4:
-        input_image = input_image[..., :3]
-        
+    if input_image.shape[-1] == 4: input_image = input_image[..., :3]
     preds = fa.get_landmarks(input_image)
-    if not preds:
-        raise ValueError(f"No se detectaron caras en la imagen: {image_path}")
-        
+    if not preds: raise ValueError(f"No se detectaron caras en la imagen: {image_path}")
     landmarks = preds[0]
-    
-    feature_map = {
-        'nose': list(range(27, 36)), 'left_eye': list(range(36, 42)),
-        'right_eye': list(range(42, 48)), 'mouth': list(range(48, 68))
-    }
-    
-    if feature not in feature_map:
-        raise ValueError(f"Rasgo '{feature}' no soportado. Soportados: {list(feature_map.keys())}")
-    
+    feature_map = {'nose': list(range(27, 36)), 'left_eye': list(range(36, 42)), 'right_eye': list(range(42, 48)), 'mouth': list(range(48, 68))}
+    if feature not in feature_map: raise ValueError(f"Rasgo '{feature}' no soportado. Soportados: {list(feature_map.keys())}")
     points = [tuple(p) for p in landmarks[feature_map[feature]]]
-    
     mask = Image.new('L', (input_image.shape[1], input_image.shape[0]), 0)
     draw = ImageDraw.Draw(mask)
     draw.polygon(points, outline=255, fill=255)
@@ -586,48 +491,33 @@ def create_feature_mask(image_path: str, feature: str, output_path: str):
 def run_finetuning_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
     job_dir = f"/workspace/job_data/{client_id}"
     os.makedirs(job_dir, exist_ok=True)
-    
     try:
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 5, "output": None, "error": None, "previews": []}
-        
         if workflow_type == "analyze_dataset":
-            logger.info(f"Iniciando análisis de dataset para job {client_id}...")
-            # Aquí iría la lógica de análisis (Quality Gate)
             time.sleep(10) # Simulación
             job_status_db[client_id]["progress"] = 100
             job_status_db[client_id]["status"] = "COMPLETED"
             job_status_db[client_id]["output"] = {"dataset_report": "Análisis completado, 18 de 20 imágenes son válidas."}
-
         elif workflow_type == "generate_and_modify_dataset":
-            logger.info(f"Iniciando generación de dataset para job {client_id}...")
-            # Aquí iría la lógica de generación o modificación
             time.sleep(20) # Simulación
             job_status_db[client_id]["progress"] = 100
             job_status_db[client_id]["status"] = "COMPLETED"
             job_status_db[client_id]["output"] = {"dataset_path": f"/workspace/datasets/dataset_{client_id}"}
-        
         elif workflow_type == "train_lora":
-            logger.info(f"Iniciando entrenamiento de LoRA para job {client_id}...")
             total_steps = config_payload.get("training_steps", 2000)
             preview_interval = 500
-            
             for step in range(0, total_steps + 1, 100):
-                time.sleep(2) # Simula el tiempo de entrenamiento
+                time.sleep(2) 
                 progress = int((step / total_steps) * 100)
                 job_status_db[client_id]["progress"] = progress
-                
                 if step % preview_interval == 0 and step > 0:
                     dummy_preview_path = f"/workspace/job_data/{client_id}/preview_step_{step}.png"
                     with open(dummy_preview_path, "w") as f: f.write(f"Preview for step {step}")
-                    
-                    if "previews" not in job_status_db[client_id]:
-                        job_status_db[client_id]["previews"] = []
+                    if "previews" not in job_status_db[client_id]: job_status_db[client_id]["previews"] = []
                     job_status_db[client_id]["previews"].append(dummy_preview_path)
-
             final_lora_path = f"/workspace/ComfyUI/models/loras/{config_payload.get('output_lora_filename', 'trained_lora.safetensors')}"
             job_status_db[client_id]["status"] = "COMPLETED"
             job_status_db[client_id]["output"] = {"lora_path": final_lora_path}
-
     except Exception as e:
         logger.error(f"Fallo en run_finetuning_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
@@ -640,13 +530,19 @@ async def create_job(payload: JobPayload):
     workflow_name = payload.workflow
     management_workflows = ["install_lora", "install_rvc"]
     finetuning_workflows = ["generate_and_modify_dataset", "train_lora", "analyze_dataset"]
+    # [CAMBIO] Definimos una lista para los nuevos workflows de análisis.
+    analysis_workflows = ["analyze_source_media"]
 
+    # [CAMBIO] Añadimos una nueva condición en el enrutador de trabajos.
     if workflow_name in management_workflows:
         logger.info(f"Enrutando trabajo [ID: {client_id}] al manejador de gestión para workflow: {workflow_name}")
         thread = threading.Thread(target=run_management_job_thread, args=(client_id, workflow_name, payload.config_payload))
     elif workflow_name in finetuning_workflows:
         logger.info(f"Enrutando trabajo [ID: {client_id}] al manejador de fine-tuning: {workflow_name}")
         thread = threading.Thread(target=run_finetuning_job_thread, args=(client_id, workflow_name, payload.config_payload))
+    elif workflow_name in analysis_workflows:
+        logger.info(f"Enrutando trabajo [ID: {client_id}] al manejador de análisis: {workflow_name}")
+        thread = threading.Thread(target=run_analysis_job_thread, args=(client_id, workflow_name, payload.config_payload))
     else:
         logger.info(f"Enrutando trabajo [ID: {client_id}] al manejador de ComfyUI para workflow: {workflow_name}")
         thread = threading.Thread(target=run_job_thread, args=(client_id, workflow_name, payload.config_payload))
@@ -658,7 +554,6 @@ async def create_job(payload: JobPayload):
 async def get_job_status(client_id: str):
     if client_id not in job_status_db:
         raise HTTPException(status_code=404, detail="ID de trabajo no encontrado.")
-    
     status_data = job_status_db[client_id]
     return StatusResponse(
         id=client_id,
