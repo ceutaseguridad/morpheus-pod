@@ -1,4 +1,4 @@
-# worker_server.py (Versión 16.0 - Fine-Tuning REAL y Automatizado)
+# worker_server.py (Versión 17.0 - Visión y Control Total)
 import logging
 import json
 import os
@@ -11,7 +11,6 @@ from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
 from urllib import request, parse
 import websocket
-import asyncio
 import random
 import sys
 import shutil
@@ -21,7 +20,14 @@ import numpy as np
 # --- Importaciones existentes ---
 from morpheus_lib import management_handler
 
-# --- NUEVAS IMPORTACIONES PARA LÓGICA DE FINE-TUNING ---
+# --- NUEVAS IMPORTACIONES PARA ANÁLISIS VISUAL Y LÓGICA FACIAL ---
+try:
+    from transformers import BlipForConditionalGeneration, BlipProcessor
+    from PIL import Image
+    VISUAL_ANALYSIS_AVAILABLE = True
+except ImportError:
+    VISUAL_ANALYSIS_AVAILABLE = False
+
 try:
     import face_alignment
     from skimage import io
@@ -30,11 +36,20 @@ try:
 except ImportError:
     FACE_ALIGNMENT_AVAILABLE = False
 
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
 logger = logging.getLogger("MorpheusPodServer")
 
+# --- Modelos de IA ---
 llm_pipeline = None
+vlm_processor = None
+vlm_model = None
+fa = None # Para face-alignment
+
 MORPHEUS_AI_MODEL_ID = "ehartford/dolphin-2.2.1-mistral-7b"
+VISUAL_MODEL_ID = "Salesforce/blip-image-captioning-base"
+
+# --- Constantes y Base de Datos en Memoria ---
 CONVERSATION_HISTORY_WINDOW = 10
 COMFYUI_URL = "http://127.0.0.1:8189"
 SERVER_ADDRESS = COMFYUI_URL.split("//")[1]
@@ -52,10 +67,10 @@ KNOWN_FUNCTIONAL_LORAS = {
     }
 }
 
+# --- Lógica de Prompts del Sistema ---
 MORPHEUS_SYSTEM_PROMPT = ""
 FALLBACK_PROMPT = "Eres un asistente de IA servicial."
 PROMPT_FILE_PATH = os.path.join(os.path.dirname(__file__), 'morpheus_system_prompt.txt')
-
 try:
     with open(PROMPT_FILE_PATH, 'r', encoding='utf-8') as f:
         MORPHEUS_SYSTEM_PROMPT = f.read().strip()
@@ -64,27 +79,24 @@ except Exception as e:
     logger.critical(f"¡CRÍTICO! No se pudo leer el archivo de prompt: {e}. Se usará un prompt de respaldo.", exc_info=True)
     MORPHEUS_SYSTEM_PROMPT = FALLBACK_PROMPT
 
-app = FastAPI(title="Morpheus AI Pod", version="16.0")
-
-# --- NUEVO: Inicializar el modelo de detección facial en el arranque ---
-fa = None
+app = FastAPI(title="Morpheus AI Pod", version="17.0")
 
 @app.on_event("startup")
 async def startup_event():
-    global fa
     logger.info("Evento de arranque de FastAPI detectado. Iniciando carga de modelos en segundo plano.")
-    loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, initialize_llm_background)
     
+    # --- Carga del LLM ---
+    threading.Thread(target=initialize_llm_background, daemon=True).start()
+    
+    # --- NUEVO: Carga del VLM ---
+    if VISUAL_ANALYSIS_AVAILABLE:
+        threading.Thread(target=initialize_vlm_background, daemon=True).start()
+    else:
+        logger.warning("Librerías para análisis visual no encontradas (transformers/Pillow). La función de etiquetado automático estará desactivada.")
+    
+    # --- Carga de Face Alignment ---
     if FACE_ALIGNMENT_AVAILABLE:
-        try:
-            logger.info("Cargando modelo de alineación facial (face-alignment)...")
-            device = 'cuda' if torch.cuda.is_available() else 'cpu'
-            fa = face_alignment.FaceAlignment(face_alignment.LandmarksType.TWO_D, flip_input=False, device=device)
-            logger.info("Modelo de alineación facial cargado con éxito.")
-        except Exception as e:
-            logger.critical(f"FALLO CRÍTICO al cargar el modelo de alineación facial: {e}", exc_info=True)
-            fa = None
+        threading.Thread(target=initialize_face_alignment_background, daemon=True).start()
     else:
         logger.warning("Librería 'face-alignment' no encontrada. El workflow de fine-tuning automático no estará disponible.")
 
@@ -101,6 +113,33 @@ def initialize_llm_background():
     except Exception as e:
         logger.critical(f"HILO SECUNDARIO: FALLO CRÍTICO al cargar el modelo de IA: {e}", exc_info=True)
 
+def initialize_vlm_background():
+    """Carga el modelo de Visión-Lenguaje en segundo plano."""
+    global vlm_processor, vlm_model
+    try:
+        if torch.cuda.is_available():
+            logger.info(f"HILO SECUNDARIO: Iniciando la carga del modelo visual: {VISUAL_MODEL_ID}...")
+            device = "cuda"
+            vlm_processor = BlipProcessor.from_pretrained(VISUAL_MODEL_ID)
+            vlm_model = BlipForConditionalGeneration.from_pretrained(VISUAL_MODEL_ID).to(device)
+            logger.info("HILO SECUNDARIO: Modelo visual cargado con éxito y listo para usarse.")
+        else:
+            logger.error("HILO SECUNDARIO: CUDA no está disponible para el VLM.")
+    except Exception as e:
+        logger.critical(f"HILO SECUNDARIO: FALLO CRÍTICO al cargar el modelo visual: {e}", exc_info=True)
+
+def initialize_face_alignment_background():
+    """Carga el modelo de alineación facial en segundo plano."""
+    global fa
+    try:
+        logger.info("HILO SECUNDARIO: Cargando modelo de alineación facial (face-alignment)...")
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        fa = face_alignment.FaceAlignment(face_alignment.LandmarksType.TWO_D, flip_input=False, device=device)
+        logger.info("HILO SECUNDARIO: Modelo de alineación facial cargado con éxito.")
+    except Exception as e:
+        logger.critical(f"HILO SECUNDARIO: FALLO CRÍTICO al cargar el modelo de alineación facial: {e}", exc_info=True)
+        fa = None
+
 class ChatMessage(BaseModel):
     role: str
     content: str
@@ -110,10 +149,69 @@ class ChatPayload(BaseModel):
     context: Dict[str, Any]
 
 class ActionData(BaseModel):
-    details: Optional[str] = None; info_type: Optional[str] = None; file_type: Optional[str] = None; job_id: Optional[str] = None; label: Optional[str] = None; options: Optional[List[str]] = None; file_types: Optional[List[str]] = None; key: Optional[str] = None; job_name: Optional[str] = None; job_type: Optional[str] = None; workflow: Optional[str] = None; config_payload: Optional[Dict[str, Any]] = None
+    # Campos flexibles para diferentes acciones
+    details: Optional[str] = None; info_type: Optional[str] = None; file_type: Optional[str] = None
+    job_id: Optional[str] = None; label: Optional[str] = None; options: Optional[List[str]] = None
+    file_types: Optional[List[str]] = None; key: Optional[str] = None
+    # Para lanzar trabajos
+    job_name: Optional[str] = None; job_type: Optional[str] = None; workflow: Optional[str] = None
+    config_payload: Optional[Dict[str, Any]] = None
+    # Para creación de persona
+    name: Optional[str] = None; system_prompt: Optional[str] = None
+    # Para búsqueda en biblioteca
+    filters: Optional[Dict[str, Any]] = None; tags: Optional[List[str]] = None
 
 class ChatResponse(BaseModel):
     response_text: str; action: str; action_data: ActionData; context: Optional[Dict[str, Any]]
+
+
+def _analyze_and_tag_image(image_path: str, config_payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Analiza una imagen, genera una descripción y etiquetas, y las fusiona con
+    los metadatos de producción del payload.
+    """
+    if not all([vlm_processor, vlm_model, llm_pipeline]):
+        logger.warning("Análisis visual omitido: uno o más modelos de IA no están listos.")
+        return {}
+
+    try:
+        # 1. Descripción Visual (VLM)
+        logger.info(f"Iniciando análisis visual para: {image_path}")
+        raw_image = Image.open(image_path).convert('RGB')
+        inputs = vlm_processor(raw_image, return_tensors="pt").to(vlm_model.device)
+        out = vlm_model.generate(**inputs, max_new_tokens=75)
+        visual_description = vlm_processor.decode(out[0], skip_special_tokens=True)
+        
+        # 2. Extracción de Metatags (LLM)
+        tagging_prompt_text = f"Extract a concise, comma-separated list of keywords or tags from the following description. Include subject, attributes, environment, and style. Description: {visual_description}"
+        tagging_prompt = llm_pipeline.tokenizer.apply_chat_template([{"role": "user", "content": tagging_prompt_text}], tokenize=False, add_generation_prompt=True)
+        outputs = llm_pipeline(tagging_prompt, max_new_tokens=64, do_sample=False)
+        raw_tags = outputs[0]['generated_text'][len(tagging_prompt):].strip().replace("</s>", "")
+        visual_tags = [tag.strip().lower() for tag in raw_tags.split(',') if tag.strip()]
+
+        # 3. Fusión de Metadatos
+        production_metadata = config_payload.get("production_metadata", {})
+        
+        final_tags = set(visual_tags)
+        if production_metadata.get("actress_name"):
+            final_tags.add(production_metadata["actress_name"].lower())
+
+        final_metadata = {
+            "project": production_metadata.get("project_name", "Sin Proyecto"),
+            "character": production_metadata.get("actress_name"),
+            "lora_model": config_payload.get("actress_lora"),
+            "checkpoint_model": config_payload.get("checkpoint_name"),
+            "workflow": production_metadata.get("workflow_type"),
+            "visual_description": visual_description,
+            "tags": sorted(list(final_tags))
+        }
+        
+        logger.info(f"Análisis visual completado para {os.path.basename(image_path)}. Tags: {final_metadata['tags']}")
+        return final_metadata
+
+    except Exception as e:
+        logger.error(f"Error durante el análisis visual de la imagen: {e}", exc_info=True)
+        return {"error": "Visual analysis failed.", "details": str(e)}
 
 def _handle_creation_flow(context: Dict[str, Any]) -> (str, Dict[str, Any], str):
     collected_data = context.get("collected_data", {})
@@ -134,76 +232,92 @@ def _handle_deepfake_flow(context: Dict[str, Any]) -> (str, Dict[str, Any], str)
     return "launch_workflow", {}, "¡Perfecto! Tengo el archivo y el modelo. Iniciando el trabajo de deepfake."
 
 def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Función principal de la IA. Analiza la intención del usuario y actúa en consecuencia.
+    """
     if not llm_pipeline:
         return {"response_text": "El modelo de IA de la Conciencia aún está inicializándose...", "action": "wait_for_user", "action_data": {}, "context": context}
-    system_prompt_to_use = context.get("system_prompt", MORPHEUS_SYSTEM_PROMPT)
-    is_test_chat_mode = "parameters" in context
+
+    new_context = context.copy()
+    last_user_message = next((m.content for m in reversed(messages) if m.role == 'user'), "")
+    last_user_message_lower = last_user_message.lower()
+
     action = "wait_for_user"
     action_data = {}
-    new_context = context.copy()
     llm_prompt_instruction = "La conversación está abierta. Responde de forma natural y directa según tu personalidad."
-    if not is_test_chat_mode:
-        new_context.setdefault("collected_data", {})
-        last_user_message_obj = next((m for m in reversed(messages) if m.role == 'user'), None)
-        last_system_message_obj = next((m for m in reversed(messages) if m.role == 'system'), None)
-        if last_user_message_obj:
-            last_user_message = last_user_message_obj.content
-            last_user_message_lower = last_user_message.lower()
-            if not new_context.get("current_workflow"):
-                if "crear imagen" in last_user_message_lower or "generar vídeo" in last_user_message_lower: new_context["current_workflow"] = "creation"
-                elif "deepfake" in last_user_message_lower: new_context["current_workflow"] = "deepfake"
-                elif "lip-sync" in last_user_message_lower: new_context["current_workflow"] = "lipsync"
-                elif "composición" in last_user_message_lower: new_context["current_workflow"] = "composition"
+
+    # --- DESPACHADOR DE INTENCIONES ---
+    # 1. Intención: Crear Personaje
+    if "crea un personaje llamado" in last_user_message_lower or "crea una nueva personalidad llamada" in last_user_message_lower:
+        action = "create_persona"
+        prompt_for_persona = f"Based on the user's request, create a detailed, effective, first-person System Prompt for an AI persona. The prompt should capture the persona's essence, goals, communication style, and constraints. User's request: '{last_user_message}'"
+        persona_template = llm_pipeline.tokenizer.apply_chat_template([{"role": "user", "content": prompt_for_persona}], tokenize=False, add_generation_prompt=True)
+        outputs = llm_pipeline(persona_template, max_new_tokens=256, do_sample=True, temperature=0.7)
+        generated_prompt = outputs[0]['generated_text'][len(persona_template):].strip().replace("</s>", "")
+        
+        try:
+            # Extraer el nombre del personaje (más robusto)
+            name_part = last_user_message.split("llamado")[1].strip()
+            if name_part.startswith('"') and '"' in name_part[1:]:
+                persona_name = name_part.split('"')[1]
+            elif name_part.startswith("'") and "'" in name_part[1:]:
+                persona_name = name_part.split("'")[1]
+            else:
+                # Si no hay comillas, toma todo hasta la siguiente coma o punto.
+                persona_name = name_part.split(',')[0].split('.')[0]
             
-            if new_context.get("current_workflow") == "creation":
-                new_context["collected_data"].setdefault("functional_loras", [])
-                for lora_key, lora_info in KNOWN_FUNCTIONAL_LORAS.items():
-                    if any(keyword in last_user_message_lower for keyword in lora_info["keywords"]):
-                        if lora_info["filename"] not in new_context["collected_data"]["functional_loras"]:
-                            new_context["collected_data"]["functional_loras"].append(lora_info["filename"])
-                            logger.info(f"Detectado trigger para LoRA funcional: {lora_info['filename']}")
+            action_data = {"name": persona_name.strip(), "system_prompt": generated_prompt}
+            llm_prompt_instruction = f"Confirma al usuario que has creado el personaje '{persona_name}' y que ya está disponible."
+        except Exception:
+            action = "wait_for_user"
+            llm_prompt_instruction = "Informa al usuario que no pudiste entender el nombre del personaje y pídele que lo intente de nuevo con el formato 'crea un personaje llamado \"Nombre\"...'"
 
-            if "he seleccionado:" in last_user_message_lower:
-                selection = last_user_message.split('`')[1]
-                new_context["collected_data"]["actress_lora"] = selection
-            elif "he subido el archivo:" in last_user_message_lower:
-                filename = last_user_message.split('`')[1]
-                file_key = next((k for k, v in new_context.get("collected_data", {}).items() if isinstance(v, dict) and v.get("name") == filename), None)
-                if file_key:
-                    if new_context.get("current_workflow") == "deepfake":
-                        new_context["collected_data"]["target_image_local_path"] = file_key
-            elif new_context.get("current_workflow") == "creation" and "prompt" not in new_context["collected_data"]:
-                new_context["collected_data"]["prompt"] = last_user_message
-
-        if last_system_message_obj and "Respuesta a la consulta 'actress_list': []" in last_system_message_obj.content:
-            llm_prompt_instruction = "El usuario no tiene modelos de identidad disponibles. Infórmale amablemente que necesita instalar uno en la sección 'Recursos' antes de continuar y finaliza la conversación."
-            new_context["current_workflow"] = None
-        else:
-            current_workflow = new_context.get("current_workflow")
-            if current_workflow:
-                handler_map = {"creation": _handle_creation_flow, "deepfake": _handle_deepfake_flow}
-                handler = handler_map.get(current_workflow)
-                if handler:
-                    action, action_data, llm_prompt_instruction = handler(new_context)
-    if is_test_chat_mode:
-        system_prompt_with_context = system_prompt_to_use
+    # 2. Intención: Búsqueda en Biblioteca
+    elif ("muéstrame" in last_user_message_lower or "busca" in last_user_message_lower or "qué imágenes hay" in last_user_message_lower) and ("imágenes" in last_user_message_lower or "resultados" in last_user_message_lower or "biblioteca" in last_user_message_lower):
+        action = "display_media"
+        extraction_prompt = f"From the user's request, extract search criteria. Identify specific key-value filters (like 'project', 'character', 'lora_model') and a separate list of general descriptive tags. Output ONLY a valid JSON object with 'filters' and 'tags' keys. Example: {{\\\"filters\\\": {{\\\"character\\\": \\\"Clara\\\"}}, \\\"tags\\\": [\\\"playa\\\"]}}. User request: '{last_user_message}'"
+        extraction_template = llm_pipeline.tokenizer.apply_chat_template([{"role": "user", "content": extraction_prompt}], tokenize=False, add_generation_prompt=True)
+        outputs = llm_pipeline(extraction_template, max_new_tokens=128, do_sample=False)
+        json_str = outputs[0]['generated_text'][len(extraction_template):].strip().replace("</s>", "")
+        
+        try:
+            # Limpiar el JSON de posibles artefactos del modelo
+            clean_json_str = json_str[json_str.find('{'):json_str.rfind('}')+1]
+            search_params = json.loads(clean_json_str)
+            action_data = {"filters": search_params.get("filters", {}), "tags": search_params.get("tags", [])}
+            llm_prompt_instruction = "Informa al usuario que estás buscando en la biblioteca con los criterios que entendiste."
+        except Exception as e:
+             action = "wait_for_user"
+             llm_prompt_instruction = f"Pide disculpas, no entendiste los criterios de búsqueda. Pide que lo reformule. (Error de parseo: {e})"
+    
+    # 3. Intención por Defecto: Flujo de Trabajo Guiado (lógica original)
     else:
-        system_prompt_with_context = f"""
-{system_prompt_to_use}
----
-**SITUACIÓN ACTUAL:** Estás operando como el asistente Morpheus.
-**CONTEXTO DEL SISTEMA:**
-{json.dumps(new_context, indent=2, default=str)}
-**TU OBJETIVO INMEDIATO:**
-{llm_prompt_instruction}
----
-"""
+        # Esta lógica se mantiene como fallback o si una conversación ya está en un flujo
+        new_context.setdefault("collected_data", {})
+        if not new_context.get("current_workflow"):
+            if "crear imagen" in last_user_message_lower or "generar vídeo" in last_user_message_lower: new_context["current_workflow"] = "creation"
+            elif "deepfake" in last_user_message_lower: new_context["current_workflow"] = "deepfake"
+        
+        current_workflow = new_context.get("current_workflow")
+        if current_workflow:
+            handler_map = {"creation": _handle_creation_flow, "deepfake": _handle_deepfake_flow}
+            handler = handler_map.get(current_workflow)
+            if handler:
+                action, action_data_flow, llm_prompt_instruction_flow = handler(new_context)
+                action_data.update(action_data_flow)
+                llm_prompt_instruction = llm_prompt_instruction_flow
+
+    # --- Generación de la respuesta de texto final del LLM ---
+    system_prompt_to_use = context.get("system_prompt", MORPHEUS_SYSTEM_PROMPT)
+    system_prompt_with_context = f"{system_prompt_to_use}\n---\n**CONTEXTO DEL SISTEMA:**\n{json.dumps(new_context, indent=2, default=str)}\n**TU OBJETIVO INMEDIATO:**\n{llm_prompt_instruction}\n---"
+    
     tokenizer = llm_pipeline.tokenizer
     limited_messages = messages[-CONVERSATION_HISTORY_WINDOW:]
     conversation = [{"role": "system", "content": system_prompt_with_context}]
     for msg in limited_messages:
         role = "user" if msg.role in ["user", "system"] else "assistant"
         conversation.append({"role": role, "content": msg.content})
+    
     prompt = tokenizer.apply_chat_template(conversation, tokenize=False, add_generation_prompt=True)
     raw_response_text = ""
     try:
@@ -212,10 +326,12 @@ def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) 
     except Exception as e:
         logger.error(f"Error durante la inferencia del LLM: {e}", exc_info=True)
         raw_response_text = "He tenido un problema crítico procesando mi propio pensamiento..."
+
     if action == "launch_workflow":
         workflow = new_context.get("current_workflow")
         job_type_map = {"creation": "image", "deepfake": "image", "lipsync": "video", "composition": "video"}
         action_data = {"job_name": f"Morpheus AI - {workflow}", "job_type": job_type_map.get(workflow, "unknown"), "workflow": workflow, "config_payload": new_context.get("collected_data", {})}
+
     final_response = {"response_text": raw_response_text, "action": action, "action_data": action_data, "context": new_context}
     return final_response
 
@@ -322,7 +438,6 @@ def get_history(prompt_id):
     with request.urlopen(f"{COMFYUI_URL}/history/{prompt_id}") as response: return json.loads(response.read())
 
 def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
-    # --- AÑADIMOS EL MAPEO PARA LA MÁSCARA DE INPAINTING ---
     PARAM_MAP = {
         "checkpoint_name": ("CheckpointLoaderSimple", "ckpt_name"),
         "prompt": ("CLIPTextEncode", "text"), 
@@ -335,7 +450,7 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
         "height": ("EmptyLatentImage", "height"), 
         "actress_lora": ("LoraLoader", "lora_name"), 
         "target_image_pod_path": ("LoadImage", "image"), 
-        "mask_image_pod_path": ("LoadImage", "image"), # Clave para la máscara
+        "mask_image_pod_path": ("LoadImage", "image"),
         "target_video_pod_path": ("VHS_VideoLoader", "video"), 
         "source_media_pod_path": ("LoadImage", "image"), 
         "audio_pod_path": ("LoadAudio", "audio_file")
@@ -350,7 +465,6 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
                 if node.get("class_type") == node_class:
                     if key == 'prompt' and "negative" in meta_title: continue
                     if key == 'negative_prompt' and "negative" not in meta_title: continue
-                    # --- LÓGICA DE DESAMBIGUACIÓN PARA LoadImage ---
                     if key == 'target_image_pod_path' and "mask" in meta_title: continue
                     if key == 'mask_image_pod_path' and "mask" not in meta_title: continue
                     is_correct_node = True
@@ -360,31 +474,65 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
                     else: 
                         node["inputs"][input_name] = value
                     logger.info(f"Parámetro aplicado: Nodo '{node_id}' ({node_class}), Input '{input_name}' = '{value}'")
-
-    if "actress_lora" not in payload or not payload.get("actress_lora"):
-        # ... (código de bypass de LoRA sin cambios) ...
-        pass
-    
-    if payload.get("character_prompt"):
-        # ... (código de fusión de prompt sin cambios) ...
-        pass
-
-    functional_loras = payload.get("functional_loras", [])
-    if functional_loras:
-        # ... (código de encadenamiento de LoRAs sin cambios) ...
-        pass
-
     return workflow_data
 
 def run_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str, Any]):
-    # ... (código sin cambios)
-    pass
+    job_dir = f"/workspace/job_data/{client_id}"
+    os.makedirs(job_dir, exist_ok=True)
+    
+    try:
+        job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 5, "output": None, "error": None}
+        
+        workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", f"{workflow_name}.json")
+        with open(workflow_path, 'r') as f:
+            workflow_data = json.load(f)
+
+        updated_workflow = update_workflow_with_payload(workflow_data, config_payload)
+        job_status_db[client_id]["progress"] = 20
+        
+        output_files = run_comfyui_generation(updated_workflow, job_dir, client_id)
+        job_status_db[client_id]["progress"] = 90
+        
+        final_output = {}
+        job_type = config_payload.get("job_type", "image")
+        
+        if job_type == "image" and output_files:
+            main_image_path = output_files[0]
+            final_output["image_pod_path"] = main_image_path
+            
+            # --- NUEVO: Llamada al módulo de visión ---
+            metadata = _analyze_and_tag_image(main_image_path, config_payload)
+            if metadata:
+                final_output["metadata"] = metadata
+        
+        elif job_type == "video" and output_files:
+             final_output["video_pod_path"] = output_files[0]
+
+        job_status_db[client_id] = {"status": "COMPLETED", "output": final_output, "error": None, "progress": 100}
+
+    except Exception as e:
+        logger.error(f"Fallo en run_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
+        job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
 def run_management_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
-    # ... (código sin cambios)
-    pass
-    
-# --- NUEVA FUNCIÓN UTILITARIA PARA EJECUTAR WORKFLOWS DE COMFYUI ---
+    try:
+        job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
+        
+        url = config_payload.get('url')
+        filename = config_payload.get('filename')
+        
+        def update_status_callback(progress=None, status_text=None):
+            if progress is not None:
+                job_status_db[client_id]['progress'] = progress
+        
+        installed_path = management_handler.handle_install(workflow_type, url, filename, update_status_callback)
+        
+        job_status_db[client_id] = {"status": "COMPLETED", "output": {"installed_path": installed_path}, "error": None, "progress": 100}
+
+    except Exception as e:
+        logger.error(f"Fallo en run_management_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
+        job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
+
 def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str) -> List[str]:
     """Ejecuta un workflow en ComfyUI y devuelve las rutas de las imágenes de salida."""
     ws = websocket.WebSocket()
@@ -399,7 +547,7 @@ def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str)
             if isinstance(out, str):
                 message = json.loads(out)
                 if message['type'] == 'executing' and message['data']['node'] is None and message['data']['prompt_id'] == prompt_id:
-                    break # Execution is done
+                    break
         
         history = get_history(prompt_id)[prompt_id]
         for node_id in history['outputs']:
@@ -407,7 +555,6 @@ def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str)
             if 'images' in node_output:
                 for image_info in node_output['images']:
                     image_data = get_image(image_info['filename'], image_info['subfolder'], image_info['type'])
-                    # Usamos un nombre de archivo único para evitar colisiones en el inpainting
                     unique_filename = f"{uuid.uuid4()}_{image_info['filename']}"
                     output_path = os.path.join(output_dir, unique_filename)
                     with open(output_path, "wb") as f:
@@ -420,14 +567,12 @@ def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str)
         raise RuntimeError(f"El workflow de ComfyUI (Prompt ID: {prompt_id}) no produjo ninguna imagen de salida.")
     return output_images
 
-# --- NUEVAS FUNCIONES PARA CREACIÓN AUTOMÁTICA DE MÁSCARAS ---
 def create_feature_mask(image_path: str, feature: str, output_path: str):
     """Crea una máscara poligonal para un rasgo facial específico."""
     if not fa:
         raise RuntimeError("El modelo de Face Alignment no está disponible.")
     
     input_image = io.imread(image_path)
-    # Convertir a RGB si tiene canal alfa
     if input_image.shape[-1] == 4:
         input_image = input_image[..., :3]
         
@@ -437,12 +582,9 @@ def create_feature_mask(image_path: str, feature: str, output_path: str):
         
     landmarks = preds[0]
     
-    # Mapeo de rasgos a índices de puntos de referencia (modelo 2D)
     feature_map = {
-        'nose': list(range(27, 36)),
-        'left_eye': list(range(36, 42)),
-        'right_eye': list(range(42, 48)),
-        'mouth': list(range(48, 68))
+        'nose': list(range(27, 36)), 'left_eye': list(range(36, 42)),
+        'right_eye': list(range(42, 48)), 'mouth': list(range(48, 68))
     }
     
     if feature not in feature_map:
@@ -455,7 +597,6 @@ def create_feature_mask(image_path: str, feature: str, output_path: str):
     draw.polygon(points, outline=255, fill=255)
     mask.save(output_path)
 
-# --- HILO DE FINE-TUNING ACTUALIZADO CON LÓGICA REAL ---
 def run_finetuning_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
     job_dir = f"/workspace/job_data/{client_id}"
     os.makedirs(job_dir, exist_ok=True)
@@ -464,7 +605,7 @@ def run_finetuning_job_thread(client_id: str, workflow_type: str, config_payload
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 5, "output": None, "error": None}
         
         if workflow_type == "generate_and_modify_dataset":
-            # ETAPA 1.1: GENERACIÓN REAL DEL DATASET BASE
+            # ETAPA 1.1: GENERACIÓN DEL DATASET BASE
             logger.info(f"[Job ID: {client_id}] Etapa 1.1: Generando dataset base...")
             base_dataset_dir = os.path.join(job_dir, "base_dataset")
             os.makedirs(base_dataset_dir, exist_ok=True)
@@ -485,7 +626,7 @@ def run_finetuning_job_thread(client_id: str, workflow_type: str, config_payload
                 run_comfyui_generation(base_workflow, base_dataset_dir, f"{client_id}_gen_{i}")
                 job_status_db[client_id]["progress"] = 5 + int(45 * (i + 1) / dataset_size)
             
-            # ETAPA 1.2: MODIFICACIÓN REAL CON INPAINTING AUTOMÁTICO
+            # ETAPA 1.2: MODIFICACIÓN CON INPAINTING AUTOMÁTICO
             logger.info(f"[Job ID: {client_id}] Etapa 1.2: Modificando dataset con Inpainting automático...")
             modified_dataset_dir = os.path.join(job_dir, config_payload["output_folder_name"])
             os.makedirs(modified_dataset_dir, exist_ok=True)
@@ -520,11 +661,9 @@ def run_finetuning_job_thread(client_id: str, workflow_type: str, config_payload
                     }
                     inpaint_workflow = update_workflow_with_payload(inpaint_workflow_template.copy(), inpaint_payload)
                     
-                    # El resultado del inpainting se usa como entrada para el siguiente rasgo
                     output_files = run_comfyui_generation(inpaint_workflow, job_dir, f"{client_id}_inpaint_{i}_{feature}")
                     current_img_to_inpaint = output_files[0]
                 
-                # Mover la imagen final modificada al directorio del dataset
                 shutil.move(current_img_to_inpaint, os.path.join(modified_dataset_dir, img_name))
                 job_status_db[client_id]["progress"] = 50 + int(50 * (i + 1) / len(base_images))
             
@@ -551,8 +690,7 @@ def run_finetuning_job_thread(client_id: str, workflow_type: str, config_payload
                 f"--train_data_dir={dataset_path}",
                 f"--output_dir={training_output_dir}",
                 f"--output_name={output_lora_filename.replace('.safetensors', '')}",
-                "--network_module=networks.lora",
-                "--save_model_as=safetensors",
+                "--network_module=networks.lora", "--save_model_as=safetensors",
                 f"--max_train_steps={training_steps}",
                 "--learning_rate=1e-4", "optimizer_type=AdamW8bit", "--mixed_precision=fp16", "--xformers"
             ]
