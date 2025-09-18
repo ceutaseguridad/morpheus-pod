@@ -1,0 +1,35 @@
+{
+  "1": {
+    "inputs": {
+      "image": "example_face.png",
+      "upload": "image"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image for Analysis"
+    }
+  },
+  "2": {
+    "inputs": {
+      "text": "Image analysis complete. See logs for details.",
+      "filename_prefix": "Analysis_Report"
+    },
+    "class_type": "SaveText",
+    "_meta": {
+      "title": "Save Analysis Report"
+    }
+  },
+  "3": {
+    "inputs": {
+      "filename_prefix": "Analyzed_Image",
+      "images": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Valid Image"
+    }
+  }
+}
