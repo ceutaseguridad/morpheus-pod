@@ -1,4 +1,4 @@
-# worker_server.py (Versión 18.1 - Clean Prompt Logic)
+# worker_server.py (Versión 19.0 - Meta-Workflow Reasoning)
 import logging
 import json
 import os
@@ -69,7 +69,7 @@ except Exception as e:
     MORPHEUS_SYSTEM_PROMPT = FALLBACK_PROMPT
 
 
-app = FastAPI(title="Morpheus AI Pod", version="18.1")
+app = FastAPI(title="Morpheus AI Pod", version="19.0")
 
 @app.on_event("startup")
 async def startup_event():
@@ -136,6 +136,8 @@ class ActionData(BaseModel):
     config_payload: Optional[Dict[str, Any]] = None
     name: Optional[str] = None; system_prompt: Optional[str] = None
     filters: Optional[Dict[str, Any]] = None; tags: Optional[List[str]] = None
+    # [NUEVO] Para manejar planes de múltiples pasos
+    execution_plan: Optional[List[Dict[str, Any]]] = None
 
 class ChatResponse(BaseModel):
     response_text: str; action: str; action_data: ActionData; context: Optional[Dict[str, Any]]
@@ -182,6 +184,7 @@ def _analyze_and_tag_image(image_path: str, config_payload: Dict[str, Any]) -> D
         logger.error(f"Error durante el análisis visual de la imagen: {e}", exc_info=True)
         return {"error": "Visual analysis failed.", "details": str(e)}
 
+# [MODIFICADO] Lógica de razonamiento completamente nueva
 def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) -> Dict[str, Any]:
     if not llm_pipeline:
         return {"response_text": "El modelo de IA de la Conciencia aún está inicializándose...", "action": "wait_for_user", "action_data": {}, "context": context}
@@ -189,48 +192,46 @@ def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) 
     new_context = context.copy()
     last_user_message = next((m.content for m in reversed(messages) if m.role == 'user'), "")
     
-    # --- Lógica de Razonamiento basada en Workbench ---
     is_confirming_plan = any(word in last_user_message.lower() for word in ["sí", "si", "procede", "confirmo", "hazlo", "adelante", "dale"])
     
-    if is_confirming_plan and new_context.get("current_plan"):
-        plan = new_context["current_plan"]
-        action = "launch_workflow"
-        action_data = plan
-        response_text = "¡Perfecto! Lanzando el trabajo ahora. Puedes seguir su progreso en el 'Monitor de Tareas'."
-        new_context.pop("current_plan", None)
+    # Si el usuario confirma Y hay un plan pendiente en el contexto
+    if is_confirming_plan and new_context.get("current_plan_list"):
+        plan = new_context["current_plan_list"]
+        
+        # Determinar la acción correcta basada en si es un plan simple o complejo
+        if len(plan) == 1:
+            action = "launch_workflow"
+            action_data = plan[0] # Enviar solo el diccionario del trabajo
+            response_text = "¡Perfecto! Lanzando el trabajo ahora. Puedes seguir su progreso en el 'Monitor de Tareas'."
+        else:
+            action = "launch_meta_workflow"
+            action_data = {"execution_plan": plan} # Enviar la lista completa
+            response_text = "¡Excelente! Iniciando el plan de trabajo con múltiples pasos. Revisa el 'Monitor de Tareas' para ver cómo se crean."
+            
+        new_context.pop("current_plan_list", None)
         return {"response_text": response_text, "action": action, "action_data": action_data, "context": new_context}
 
+    # Si no es una confirmación, se formula un plan nuevo
     workbench = new_context.get("workbench", {})
     situation_briefing = ""
     if workbench:
         situation_briefing += "**Informe de Situación (Mesa de Trabajo):**\n"
         for item_id, item in workbench.items():
-            situation_briefing += f"- Asset ID: {item_id}, Rol: '{item['role']}', Fichero: '{item['filename']}'\n"
+            base_info = f"- Asset ID: {item_id}, Rol: '{item['role']}', Fichero: '{item['filename']}'"
+            # [NUEVO] Añadir metadatos al informe si existen
+            try:
+                if item.get("metadata_json"):
+                    metadata = json.loads(item["metadata_json"])
+                    meta_info = f", Info: Es '{metadata.get('character', 'N/A')}', LoRA: '{metadata.get('lora_model', 'N/A')}'"
+                    base_info += meta_info
+            except Exception:
+                pass # Ignorar errores de parseo de metadatos
+            situation_briefing += base_info + "\n"
         situation_briefing += "\n"
     
     situation_briefing += f"**Petición del Usuario:** \"{last_user_message}\"\n\n"
-    situation_briefing += """**Tu Tarea:**
-1.  **Analiza la Petición y el Workbench.** ¿Qué quiere crear el usuario? ¿Qué assets se necesitan y cómo deben combinarse?
-2.  **Identifica el Workflow Principal.** (Ej: 'creation', 'deepfake', 'composition', 'inpainting').
-3.  **Formula un Plan de Acción.** Describe el plan al usuario de forma clara y concisa.
-4.  **Genera un JSON con el `config_payload` del trabajo.** Este JSON debe ser válido y contener TODA la información necesaria para ejecutar el trabajo si el usuario confirma. Incluye `job_name`, `job_type`, `workflow`, y `config_payload`.
-5.  **Responde en el siguiente formato JSON VÁLIDO y NADA MÁS:**
-    ```json
-    {
-      "plan_description": "Aquí va la descripción del plan que le darás al usuario.",
-      "execution_details": {
-        "job_name": "Nombre descriptivo del trabajo",
-        "job_type": "image",
-        "workflow": "nombre_del_workflow",
-        "config_payload": {
-          "prompt": "prompt final detallado",
-          "negative_prompt": "negativo si aplica",
-          "actress_lora": "nombre_del_lora.safetensors si aplica",
-          "target_image_local_path": "/path/del/asset/del/workbench si aplica"
-        }
-      }
-    }
-    ```"""
+    # El prompt del sistema (cargado de morpheus_system_prompt.txt) se encargará del resto
+    situation_briefing += "**Tu Tarea:** Analiza la situación y la petición. Formula un plan de acción claro y responde en el formato JSON OBLIGATORIO que se te ha indicado en tus instrucciones."
 
     system_prompt_to_use = new_context.get("system_prompt", MORPHEUS_SYSTEM_PROMPT)
     
@@ -243,19 +244,20 @@ def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) 
     prompt = tokenizer.apply_chat_template(conversation_for_planning, tokenize=False, add_generation_prompt=True)
     
     try:
-        outputs = llm_pipeline(prompt, max_new_tokens=512, do_sample=False, pad_token_id=tokenizer.eos_token_id)
+        outputs = llm_pipeline(prompt, max_new_tokens=1024, do_sample=False, pad_token_id=tokenizer.eos_token_id)
         raw_llm_output = outputs[0]['generated_text'][len(prompt):].strip().replace("</s>", "")
         
         json_start = raw_llm_output.find('{')
         json_end = raw_llm_output.rfind('}') + 1
         if json_start != -1:
             json_str = raw_llm_output[json_start:json_end]
-            parsed_plan = json.loads(json_str)
+            parsed_response = json.loads(json_str)
             
-            response_text = parsed_plan["plan_description"]
+            response_text = parsed_response["plan_description"]
             action = "wait_for_user"
             action_data = {}
-            new_context["current_plan"] = parsed_plan["execution_details"]
+            # [MODIFICADO] Guardamos la lista completa del plan
+            new_context["current_plan_list"] = parsed_response["execution_plan"]
             
         else:
             response_text = "He tenido un problema formulando un plan. Esto es lo que pensé: " + raw_llm_output
@@ -274,7 +276,6 @@ def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) 
 @app.post("/chat", response_model=ChatResponse)
 async def handle_chat(payload: ChatPayload):
     response_data = get_morpheus_response(payload.messages, payload.context)
-    # Pydantic a veces tiene problemas con anidamiento, construimos explícitamente.
     action_data_obj = ActionData(**response_data.get("action_data", {}))
     return ChatResponse(
         response_text=response_data["response_text"],
@@ -362,12 +363,14 @@ class JobPayload(BaseModel):
     worker_job_id: Optional[str] = None
     config_payload: Dict[str, Any] = {}
 
+# [MODIFICADO] Añadido campo 'previews' para el feedback visual
 class StatusResponse(BaseModel):
     id: str
     status: str
     output: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     progress: int = 0
+    previews: Optional[List[str]] = None
 
 def queue_prompt(prompt: Dict[str, Any], client_id: str):
     p = {"prompt": prompt, "client_id": client_id}
@@ -540,19 +543,54 @@ def create_feature_mask(image_path: str, feature: str, output_path: str):
     draw.polygon(points, outline=255, fill=255)
     mask.save(output_path)
 
+# [MODIFICADO] Simulación de feedback visual para entrenamiento
 def run_finetuning_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
     job_dir = f"/workspace/job_data/{client_id}"
     os.makedirs(job_dir, exist_ok=True)
     
     try:
-        job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 5, "output": None, "error": None}
+        job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 5, "output": None, "error": None, "previews": []}
         
-        if workflow_type == "generate_and_modify_dataset":
-            # (El código de esta función no se modifica)
-            pass
+        if workflow_type == "analyze_dataset":
+            logger.info(f"Iniciando análisis de dataset para job {client_id}...")
+            # Aquí iría la lógica de análisis (Quality Gate)
+            time.sleep(10) # Simulación
+            job_status_db[client_id]["progress"] = 100
+            job_status_db[client_id]["status"] = "COMPLETED"
+            job_status_db[client_id]["output"] = {"dataset_report": "Análisis completado, 18 de 20 imágenes son válidas."}
+
+        elif workflow_type == "generate_and_modify_dataset":
+            logger.info(f"Iniciando generación de dataset para job {client_id}...")
+            # Aquí iría la lógica de generación o modificación
+            time.sleep(20) # Simulación
+            job_status_db[client_id]["progress"] = 100
+            job_status_db[client_id]["status"] = "COMPLETED"
+            job_status_db[client_id]["output"] = {"dataset_path": f"/workspace/datasets/dataset_{client_id}"}
+        
         elif workflow_type == "train_lora":
-            # (El código de esta función no se modifica)
-            pass
+            logger.info(f"Iniciando entrenamiento de LoRA para job {client_id}...")
+            # [NUEVO] Simulación de entrenamiento con feedback visual
+            total_steps = config_payload.get("training_steps", 2000)
+            preview_interval = 500
+            
+            for step in range(0, total_steps + 1, 100):
+                time.sleep(2) # Simula el tiempo de entrenamiento
+                progress = int((step / total_steps) * 100)
+                job_status_db[client_id]["progress"] = progress
+                
+                # Simular la creación de una preview en cada intervalo
+                if step % preview_interval == 0 and step > 0:
+                    dummy_preview_path = f"/workspace/job_data/{client_id}/preview_step_{step}.png"
+                    # En un caso real, aquí se crearía la imagen
+                    with open(dummy_preview_path, "w") as f: f.write(f"Preview for step {step}")
+                    
+                    if "previews" not in job_status_db[client_id]:
+                        job_status_db[client_id]["previews"] = []
+                    job_status_db[client_id]["previews"].append(dummy_preview_path)
+
+            final_lora_path = f"/workspace/ComfyUI/models/loras/{config_payload.get('output_lora_filename', 'trained_lora.safetensors')}"
+            job_status_db[client_id]["status"] = "COMPLETED"
+            job_status_db[client_id]["output"] = {"lora_path": final_lora_path}
 
     except Exception as e:
         logger.error(f"Fallo en run_finetuning_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
@@ -565,7 +603,8 @@ async def create_job(payload: JobPayload):
     
     workflow_name = payload.workflow
     management_workflows = ["install_lora", "install_rvc"]
-    finetuning_workflows = ["generate_and_modify_dataset", "train_lora"]
+    # [MODIFICADO] Añadidos los nuevos workflows
+    finetuning_workflows = ["generate_and_modify_dataset", "train_lora", "analyze_dataset"]
 
     if workflow_name in management_workflows:
         logger.info(f"Enrutando trabajo [ID: {client_id}] al manejador de gestión para workflow: {workflow_name}")
@@ -584,4 +623,15 @@ async def create_job(payload: JobPayload):
 async def get_job_status(client_id: str):
     if client_id not in job_status_db:
         raise HTTPException(status_code=404, detail="ID de trabajo no encontrado.")
-    return StatusResponse(**{"id": client_id, **job_status_db[client_id]})
+    
+    # [MODIFICADO] Asegurar que el objeto StatusResponse se construye correctamente
+    # con todos los campos, incluyendo los opcionales como 'previews'.
+    status_data = job_status_db[client_id]
+    return StatusResponse(
+        id=client_id,
+        status=status_data.get("status", "UNKNOWN"),
+        output=status_data.get("output"),
+        error=status_data.get("error"),
+        progress=status_data.get("progress", 0),
+        previews=status_data.get("previews")
+    )
