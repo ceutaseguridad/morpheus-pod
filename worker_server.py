@@ -36,6 +36,13 @@ try:
 except ImportError:
     FACE_ALIGNMENT_AVAILABLE = False
 
+# [CAMBIO] Importamos la librería OpenCV para el análisis de vídeo.
+try:
+    import cv2
+    VIDEO_ANALYSIS_AVAILABLE = True
+except ImportError:
+    VIDEO_ANALYSIS_AVAILABLE = False
+
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
 logger = logging.getLogger("MorpheusPodServer")
@@ -184,7 +191,35 @@ def _analyze_and_tag_image(image_path: str, config_payload: Dict[str, Any]) -> D
         logger.error(f"Error durante el análisis visual de la imagen: {e}", exc_info=True)
         return {"error": "Visual analysis failed.", "details": str(e)}
 
-# [MODIFICADO] Lógica de razonamiento completamente nueva
+# [CAMBIO] Nueva función para extraer la duración de un vídeo usando OpenCV.
+def _get_video_duration(video_path: str) -> float:
+    """
+    Calcula la duración de un archivo de vídeo en segundos.
+    """
+    if not VIDEO_ANALYSIS_AVAILABLE:
+        logger.warning("Librería OpenCV no disponible, no se puede obtener la duración del vídeo.")
+        return 0.0
+    try:
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            logger.error(f"No se pudo abrir el vídeo para análisis de duración: {video_path}")
+            return 0.0
+        
+        frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        cap.release()
+        
+        if fps > 0:
+            duration = frame_count / fps
+            logger.info(f"Duración del vídeo '{os.path.basename(video_path)}' calculada: {duration:.2f} segundos.")
+            return round(duration, 2)
+        else:
+            logger.warning(f"El FPS del vídeo es 0, no se puede calcular la duración para: {video_path}")
+            return 0.0
+    except Exception as e:
+        logger.error(f"Error al obtener la duración del vídeo '{video_path}': {e}", exc_info=True)
+        return 0.0
+
 def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) -> Dict[str, Any]:
     if not llm_pipeline:
         return {"response_text": "El modelo de IA de la Conciencia aún está inicializándose...", "action": "wait_for_user", "action_data": {}, "context": context}
@@ -194,43 +229,38 @@ def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) 
     
     is_confirming_plan = any(word in last_user_message.lower() for word in ["sí", "si", "procede", "confirmo", "hazlo", "adelante", "dale"])
     
-    # Si el usuario confirma Y hay un plan pendiente en el contexto
     if is_confirming_plan and new_context.get("current_plan_list"):
         plan = new_context["current_plan_list"]
         
-        # Determinar la acción correcta basada en si es un plan simple o complejo
         if len(plan) == 1:
             action = "launch_workflow"
-            action_data = plan[0] # Enviar solo el diccionario del trabajo
+            action_data = plan[0] 
             response_text = "¡Perfecto! Lanzando el trabajo ahora. Puedes seguir su progreso en el 'Monitor de Tareas'."
         else:
             action = "launch_meta_workflow"
-            action_data = {"execution_plan": plan} # Enviar la lista completa
+            action_data = {"execution_plan": plan} 
             response_text = "¡Excelente! Iniciando el plan de trabajo con múltiples pasos. Revisa el 'Monitor de Tareas' para ver cómo se crean."
             
         new_context.pop("current_plan_list", None)
         return {"response_text": response_text, "action": action, "action_data": action_data, "context": new_context}
 
-    # Si no es una confirmación, se formula un plan nuevo
     workbench = new_context.get("workbench", {})
     situation_briefing = ""
     if workbench:
         situation_briefing += "**Informe de Situación (Mesa de Trabajo):**\n"
         for item_id, item in workbench.items():
             base_info = f"- Asset ID: {item_id}, Rol: '{item['role']}', Fichero: '{item['filename']}'"
-            # [NUEVO] Añadir metadatos al informe si existen
             try:
                 if item.get("metadata_json"):
                     metadata = json.loads(item["metadata_json"])
                     meta_info = f", Info: Es '{metadata.get('character', 'N/A')}', LoRA: '{metadata.get('lora_model', 'N/A')}'"
                     base_info += meta_info
             except Exception:
-                pass # Ignorar errores de parseo de metadatos
+                pass 
             situation_briefing += base_info + "\n"
         situation_briefing += "\n"
     
     situation_briefing += f"**Petición del Usuario:** \"{last_user_message}\"\n\n"
-    # El prompt del sistema (cargado de morpheus_system_prompt.txt) se encargará del resto
     situation_briefing += "**Tu Tarea:** Analiza la situación y la petición. Formula un plan de acción claro y responde en el formato JSON OBLIGATORIO que se te ha indicado en tus instrucciones."
 
     system_prompt_to_use = new_context.get("system_prompt", MORPHEUS_SYSTEM_PROMPT)
@@ -256,7 +286,6 @@ def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) 
             response_text = parsed_response["plan_description"]
             action = "wait_for_user"
             action_data = {}
-            # [MODIFICADO] Guardamos la lista completa del plan
             new_context["current_plan_list"] = parsed_response["execution_plan"]
             
         else:
@@ -363,7 +392,6 @@ class JobPayload(BaseModel):
     worker_job_id: Optional[str] = None
     config_payload: Dict[str, Any] = {}
 
-# [MODIFICADO] Añadido campo 'previews' para el feedback visual
 class StatusResponse(BaseModel):
     id: str
     status: str
@@ -453,8 +481,20 @@ def run_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str,
             if metadata:
                 final_output["metadata"] = metadata
         
+        # [CAMBIO] Modificamos la lógica para la finalización de trabajos de vídeo.
         elif job_type == "video" and output_files:
-             final_output["video_pod_path"] = output_files[0]
+            main_video_path = output_files[0]
+            final_output["video_pod_path"] = main_video_path
+            
+            # Obtenemos la duración y creamos un objeto de metadatos para el vídeo.
+            duration = _get_video_duration(main_video_path)
+            production_metadata = config_payload.get("production_metadata", {})
+            final_output["metadata"] = {
+                "project": production_metadata.get("project_name", "Sin Proyecto"),
+                "character": production_metadata.get("actress_name"),
+                "workflow": production_metadata.get("workflow_type"),
+                "duration_seconds": duration
+             }
 
         job_status_db[client_id] = {"status": "COMPLETED", "output": final_output, "error": None, "progress": 100}
 
@@ -543,7 +583,6 @@ def create_feature_mask(image_path: str, feature: str, output_path: str):
     draw.polygon(points, outline=255, fill=255)
     mask.save(output_path)
 
-# [MODIFICADO] Simulación de feedback visual para entrenamiento
 def run_finetuning_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
     job_dir = f"/workspace/job_data/{client_id}"
     os.makedirs(job_dir, exist_ok=True)
@@ -569,7 +608,6 @@ def run_finetuning_job_thread(client_id: str, workflow_type: str, config_payload
         
         elif workflow_type == "train_lora":
             logger.info(f"Iniciando entrenamiento de LoRA para job {client_id}...")
-            # [NUEVO] Simulación de entrenamiento con feedback visual
             total_steps = config_payload.get("training_steps", 2000)
             preview_interval = 500
             
@@ -578,10 +616,8 @@ def run_finetuning_job_thread(client_id: str, workflow_type: str, config_payload
                 progress = int((step / total_steps) * 100)
                 job_status_db[client_id]["progress"] = progress
                 
-                # Simular la creación de una preview en cada intervalo
                 if step % preview_interval == 0 and step > 0:
                     dummy_preview_path = f"/workspace/job_data/{client_id}/preview_step_{step}.png"
-                    # En un caso real, aquí se crearía la imagen
                     with open(dummy_preview_path, "w") as f: f.write(f"Preview for step {step}")
                     
                     if "previews" not in job_status_db[client_id]:
@@ -603,7 +639,6 @@ async def create_job(payload: JobPayload):
     
     workflow_name = payload.workflow
     management_workflows = ["install_lora", "install_rvc"]
-    # [MODIFICADO] Añadidos los nuevos workflows
     finetuning_workflows = ["generate_and_modify_dataset", "train_lora", "analyze_dataset"]
 
     if workflow_name in management_workflows:
@@ -624,8 +659,6 @@ async def get_job_status(client_id: str):
     if client_id not in job_status_db:
         raise HTTPException(status_code=404, detail="ID de trabajo no encontrado.")
     
-    # [MODIFICADO] Asegurar que el objeto StatusResponse se construye correctamente
-    # con todos los campos, incluyendo los opcionales como 'previews'.
     status_data = job_status_db[client_id]
     return StatusResponse(
         id=client_id,
