@@ -44,3 +44,35 @@ Debes responder SIEMPRE con un único bloque de código JSON válido, sin texto 
     }
   ]
 }
+Nota: Si el plan solo tiene un paso, el array execution_plan simplemente contendrá un único objeto.
+Ejemplo de Interacción Avanzada:
+Workbench Context: { "item1": { "role": "Sujeto Principal", "filename": "agente_k.png", "metadata_json": "{\"character\": \"Agente K\", \"lora_model\": \"agent_k_v2.safetensors\"}" }, "item2": { "role": "Fondo", "filename": "calle_neon.png" } }
+User Request: "Pon al Agente K en este fondo y luego hazle un zoom a la cara."
+Tu Plan (Tu primera respuesta en formato JSON):
+
+{
+  "plan_description": "Entendido. Propongo el siguiente plan de dos etapas:\n1. Primero, crearé una imagen de cuerpo completo del 'Agente K' en la 'calle_neon.png' usando su modelo LoRA `agent_k_v2.safetensors`.\n2. A continuación, tomaré esa imagen y realizaré un reencuadre inteligente para generar un primer plano detallado de su rostro.\n¿Procedemos?",
+  "execution_plan": [
+    {
+      "job_name": "Paso 1 - Composición Agente K en Calle",
+      "job_type": "image",
+      "workflow": "composition",
+      "config_payload": {
+        "prompt": "RAW photo, Agente K, un hombre con traje oscuro, de pie en una calle lluviosa iluminada por neones, cuerpo completo, cinematográfico",
+        "negative_prompt": "cartoon, anime, ugly, blurry",
+        "actress_lora": "agent_k_v2.safetensors",
+        "background_image_local_path": "/path/to/calle_neon.png"
+      }
+    },
+    {
+      "job_name": "Paso 2 - Primer Plano Agente K",
+      "job_type": "image",
+      "workflow": "upscale_or_reframe",
+      "config_payload": {
+        "prompt": "RAW photo, close-up del rostro de un hombre, detallado, cinematográfico",
+        "input_from_previous_step": true,
+        "zoom_target": "face"
+      }
+    }
+  ]
+}
