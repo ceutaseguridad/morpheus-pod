@@ -7,16 +7,16 @@ Flask
 python-dotenv
 transformers
 protobuf
-accelerate
+
+# --- [MOTOR UPGRADE] Dependencias para los nuevos modelos ---
+# SD3 y SVD requieren versiones actualizadas de estas librerías
+diffusers>=0.27.0
+accelerate>=0.28.0
 
 # --- [SECCIÓN DE FIJACIÓN DE VERSIONES (PINNING) PARA ESTABILIDAD] ---
-
-# Fija el "trío" compatible para resolver el conflicto torch/torchvision/torchaudio.
 torch==2.4.1
 torchvision==0.19.1
 torchaudio==2.4.1
-
-# Fija numpy a una versión compatible con opencv-python Y torch.
 numpy==2.2.4
 
 # Dependencias que faltaban y que causaban ModuleNotFoundError.
@@ -28,16 +28,11 @@ librosa
 comfyui-workflow-templates
 comfyui-embedded-docs
 imageio-ffmpeg
-
 # Para entrenamiento de LoRA (esto instala la suite de Kohya)
 kohya_ss
 pillow
-
-# --- [VERITAS UPGRADE] Nuevas dependencias ---
-
 # Para segmentación facial avanzada, detección de landmarks y animación (requiere OpenCV)
 face-alignment
-
 # Para el streaming de vídeo en "Modo Espejo" (Actuación Virtual)
 streamlit-webrtc
 av
