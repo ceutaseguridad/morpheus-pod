@@ -1,7 +1,7 @@
 {
   "1": {
     "inputs": {
-      "video": "video_to_process.mp4",
+      "video": "__file:input_from_previous_step__",
       "force_rate": 24,
       "force_size": "unchanged",
       "frame_load_cap": 0
@@ -13,7 +13,7 @@
   },
   "2": {
     "inputs": {
-      "amount": 0.02,
+      "amount": "__param:grain_amount__",
       "mono": true,
       "seed": 0,
       "frames": [
@@ -28,8 +28,8 @@
   },
   "3": {
     "inputs": {
-      "lens_distortion": 0.05,
-      "chromatic_aberration": 0.015,
+      "lens_distortion": "__param:lens_distortion__",
+      "chromatic_aberration": "__param:chromatic_aberration__",
       "blur_size": 0.2,
       "images": [
         "2",
