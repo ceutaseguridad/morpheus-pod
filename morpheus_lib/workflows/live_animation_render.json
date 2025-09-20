@@ -1,7 +1,7 @@
 {
   "1": {
     "inputs": {
-      "directory": "input/captured_frames",
+      "directory": "./input/placeholder_dir",
       "image_load_cap": 300,
       "sort_method": "numerical"
     },
