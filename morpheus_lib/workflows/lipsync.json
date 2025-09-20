@@ -4,14 +4,14 @@
       "face": [ "2", 0 ],
       "driving_audio": [ "3", 0 ],
       "emo_checkpoint": "emo_v1.pth",
-      "emotion_intensity": 1.0
+      "emotion_intensity": "__param:head_motion__"
     },
     "class_type": "EMO_AnimateFace",
     "_meta": { "title": "EMO Face Animation" }
   },
   "2": {
     "inputs": {
-      "image": "example_face.png",
+      "image": "__file:source_media_pod_path__",
       "upload": "image"
     },
     "class_type": "LoadImage",
@@ -19,7 +19,7 @@
   },
   "3": {
     "inputs": {
-      "audio_file": "example_audio.wav"
+      "audio_file": "__file:audio_pod_path__"
     },
     "class_type": "LoadAudio",
     "_meta": { "title": "Load Driving Audio" }
