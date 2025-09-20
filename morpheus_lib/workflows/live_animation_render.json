@@ -12,11 +12,11 @@
   },
   "2": {
     "inputs": {
-      "ckpt_name": "sd_xl_base_1.0.safetensors"
+      "ckpt_name": "sd3_medium.safetensors"
     },
     "class_type": "CheckpointLoaderSimple",
     "_meta": {
-      "title": "Cargar Checkpoint Base (SDXL)"
+      "title": "Cargar Checkpoint Base (SD3)"
     }
   },
   "3": {
@@ -49,9 +49,9 @@
     "inputs": {
       "seed": "__param:seed__",
       "steps": 20,
-      "cfg": 7,
-      "sampler_name": "euler",
-      "scheduler": "normal",
+      "cfg": 4.5,
+      "sampler_name": "dpmpp_2m_sde_gpu",
+      "scheduler": "karras",
       "denoise": 0.7,
       "model": [
         "10",
