@@ -1,10 +1,10 @@
 {
   "3": {
     "inputs": {
-      "seed": 0,
-      "steps": 28,
-      "cfg": 4.5,
-      "sampler_name": "dpmpp_2m_sde_gpu",
+      "seed": "__param:seed__",
+      "steps": "__param:steps__",
+      "cfg": "__param:cfg_scale__",
+      "sampler_name": "__param:sampler_name__",
       "scheduler": "karras",
       "denoise": 1,
       "model": ["2", 0],
@@ -16,16 +16,16 @@
     "_meta": { "title": "KSampler" }
   },
   "2": {
-    "inputs": {
-      "ckpt_name": "sd3_medium.safetensors"
+    "inputs": { 
+      "ckpt_name": "__param:checkpoint_name__" 
     },
     "class_type": "CheckpointLoaderSimple",
     "_meta": { "title": "Load Checkpoint (SD3)" }
   },
   "5": {
     "inputs": {
-      "width": 1024,
-      "height": 1024,
+      "width": "__param:width__",
+      "height": "__param:height__",
       "batch_size": 1
     },
     "class_type": "EmptyLatentImage",
@@ -33,7 +33,7 @@
   },
   "6": {
     "inputs": {
-      "text": "RAW photo, a young woman, best quality, masterpiece",
+      "text": "__param:prompt__",
       "clip": ["2", 1]
     },
     "class_type": "CLIPTextEncode",
@@ -41,7 +41,7 @@
   },
   "7": {
     "inputs": {
-      "text": "painting, illustration, anime, cartoon, 3d render, (deformed, distorted, disfigured:1.3), bad anatomy, ugly, blurry, duplicate",
+      "text": "__param:negative_prompt__",
       "clip": ["2", 1]
     },
     "class_type": "CLIPTextEncode",
