@@ -1,88 +1,59 @@
 {
   "1": {
     "inputs": {
-      "lora_name": "detail_tweaker_xl.safetensors",
-      "strength_model": 0.7,
-      "strength_clip": 0.7,
-      "model": ["2", 0],
-      "clip": ["2", 1]
+      "ckpt_name": "sd3_medium.safetensors"
     },
-    "class_type": "LoraLoader",
-    "_meta": {"title": "LoraLoader"}
-  },
-  "2": {
-    "inputs": {"ckpt_name": "sd_xl_base_1.0.safetensors"},
     "class_type": "CheckpointLoaderSimple",
-    "_meta": {"title": "Load Checkpoint"}
+    "_meta": { "title": "Load Checkpoint (SD3)" }
   },
   "3": {
     "inputs": {
-      "video": "example.mp4",
-      "force_rate": 8,
-      "force_size": "1024x1024",
-      "frame_load_cap": 90
+      "width": 1024,
+      "height": 576,
+      "video_frames": 25,
+      "motion_bucket_id": 127,
+      "fps": 8,
+      "augmentation_level": 0.1,
+      "model": ["1", 0],
+      "positive": ["6", 0],
+      "negative": ["7", 0]
     },
-    "class_type": "VHS_VideoLoader",
-    "_meta": {"title": "Load Target Video"}
+    "class_type": "SVD_img2vid_Conditioning",
+    "_meta": { "title": "Stable Video Conditioning" }
   },
-  "4": {
+  "6": {
     "inputs": {
-      "frame_rate": 8,
-      "loop_count": 0,
-      "filename_prefix": "Morpheus_VidDeepfake_XL",
-      "format": "video/h264-mp4",
-      "pix_fmt": "yuv420p",
-      "images": ["10", 0]
+      "text": "cinematic shot of a woman walking through a futuristic city",
+      "clip": ["1", 1]
     },
-    "class_type": "VHS_VideoCombine",
-    "_meta": {"title": "Save Output Video"}
+    "class_type": "CLIPTextEncode",
+    "_meta": { "title": "CLIP Text Encode (Prompt)" }
   },
   "7": {
     "inputs": {
-      "text": "a high quality photo of a woman, best quality, masterpiece",
+      "text": "ugly, blurry, low quality, deformed",
       "clip": ["1", 1]
     },
     "class_type": "CLIPTextEncode",
-    "_meta": {"title": "CLIP Text Encode (Prompt)"}
+    "_meta": { "title": "CLIP Text Encode (Negative)" }
   },
   "8": {
     "inputs": {
-      "text": "ugly, blurry, low quality, deformed, worst quality",
-      "clip": ["1", 1]
+      "frame_rate": 8,
+      "loop_count": 0,
+      "filename_prefix": "Morpheus_T2V_Result",
+      "format": "video/h264-mp4",
+      "images": ["10", 0]
     },
-    "class_type": "CLIPTextEncode",
-    "_meta": {"title": "CLIP Text Encode (Negative)"}
+    "class_type": "VHS_VideoCombine",
+    "_meta": { "title": "Save Video" }
   },
   "10": {
     "inputs": {
-      "samples": ["12", 0],
-      "vae": ["2", 2]
+      "samples": ["3", 0],
+      "vae": ["1", 2]
     },
     "class_type": "VAEDecode",
-    "_meta": {"title": "VAE Decode"}
-  },
-  "12": {
-    "inputs": {
-      "seed": 0,
-      "steps": 20,
-      "cfg": 7,
-      "sampler_name": "euler",
-      "scheduler": "normal",
-      "denoise": 0.6,
-      "model": ["1", 0],
-      "positive": ["7", 0],
-      "negative": ["8", 0],
-      "latent_image": ["20", 0]
-    },
-    "class_type": "KSampler",
-    "_meta": {"title": "KSampler"}
-  },
-  "20": {
-    "inputs": {
-      "pixels": ["3", 0],
-      "vae": ["2", 2]
-    },
-    "class_type": "VAEEncode",
-    "_meta": {"title": "VAE Encode"}
+    "_meta": { "title": "VAE Decode" }
   }
 }
