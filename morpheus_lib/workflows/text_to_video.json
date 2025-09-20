@@ -8,7 +8,7 @@
   },
   "6": {
     "inputs": {
-      "text": "cinematic shot of a woman walking through a futuristic city",
+      "text": "__param:prompt__",
       "clip": [ "1", 1 ]
     },
     "class_type": "CLIPTextEncode",
@@ -16,7 +16,7 @@
   },
   "7": {
     "inputs": {
-      "text": "ugly, blurry, low quality, deformed, worst quality, cartoon",
+      "text": "__param:negative_prompt__",
       "clip": [ "1", 1 ]
     },
     "class_type": "CLIPTextEncode",
@@ -24,7 +24,7 @@
   },
   "10": {
     "inputs": {
-      "seed": 0,
+      "seed": "__param:seed__",
       "steps": 30,
       "cfg": 8.0,
       "sampler_name": "euler",
@@ -32,7 +32,7 @@
       "frame_count": 64,
       "width": 1024,
       "height": 576,
-      "motion_bucket_id": 127,
+      "motion_bucket_id": "__param:motion_bucket_id__",
       "model": [ "1", 0 ],
       "positive": [ "6", 0 ],
       "negative": [ "7", 0 ]
