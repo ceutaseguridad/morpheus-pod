@@ -2,11 +2,12 @@
   "1": {
     "inputs": {
       "face": [ "2", 0 ],
-      "voice": [ "3", 0 ],
-      "wav2lip_checkpoint": "wav2lip_gan.pth"
+      "driving_audio": [ "3", 0 ],
+      "emo_checkpoint": "emo_v1.pth",
+      "emotion_intensity": 1.0
     },
-    "class_type": "Wav2LipNode",
-    "_meta": { "title": "Wav2Lip Processor" }
+    "class_type": "EMO_AnimateFace",
+    "_meta": { "title": "EMO Face Animation" }
   },
   "2": {
     "inputs": {
@@ -27,12 +28,11 @@
     "inputs": {
       "frame_rate": 25,
       "loop_count": 0,
-      "filename_prefix": "Morpheus_LipSync",
+      "filename_prefix": "Morpheus_LipSync_EMO",
       "format": "video/h264-mp4",
-      "pix_fmt": "yuv420p",
       "images": [ "1", 0 ]
     },
     "class_type": "VHS_VideoCombine",
-    "_meta": { "title": "Save LipSync Video" }
+    "_meta": { "title": "Save Animated Video" }
   }
 }
