@@ -5,7 +5,8 @@
 checkpoints,https://huggingface.co/stabilityai/stable-diffusion-3-medium/resolve/main/sd3_medium.safetensors
 
 # --- [MOTOR UPGRADE] Modelo de Vídeo Base ---
-animatediff_models,https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/resolve/main/svd_xt_1_1.safetensors
+# Se reemplaza SVD. El nuevo modelo es un checkpoint completo, no un modelo de AnimateDiff.
+checkpoints,https://huggingface.co/Morpheus/Sora-V2-Alternative/resolve/main/sora_v2_alt_1_2.safetensors
 
 # --- [MOTOR UPGRADE] Modelo de Animación Facial ---
 wav2lip,https://huggingface.co/Morpheus/EMO-Face-Animator/resolve/main/emo_v1.pth
