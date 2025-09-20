@@ -29,8 +29,15 @@ comfyui-workflow-templates
 comfyui-embedded-docs
 imageio-ffmpeg
 
-# Para segmentación facial automática y creación de máscaras
-face-alignment
 # Para entrenamiento de LoRA (esto instala la suite de Kohya)
 kohya_ss
 pillow
+
+# --- [VERITAS UPGRADE] Nuevas dependencias ---
+
+# Para segmentación facial avanzada, detección de landmarks y animación (requiere OpenCV)
+face-alignment
+
+# Para el streaming de vídeo en "Modo Espejo" (Actuación Virtual)
+streamlit-webrtc
+av
