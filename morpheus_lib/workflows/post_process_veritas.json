@@ -1,0 +1,76 @@
+{
+  "1": {
+    "inputs": {
+      "video": "video_to_process.mp4",
+      "force_rate": 24,
+      "force_size": "unchanged",
+      "frame_load_cap": 0
+    },
+    "class_type": "VHS_VideoLoader",
+    "_meta": {
+      "title": "Cargar Vídeo Generado"
+    }
+  },
+  "2": {
+    "inputs": {
+      "amount": 0.02,
+      "mono": true,
+      "seed": 0,
+      "frames": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "VHS_AddGrain",
+    "_meta": {
+      "title": "Añadir Ruido de Sensor (Grano)"
+    }
+  },
+  "3": {
+    "inputs": {
+      "lens_distortion": 0.05,
+      "chromatic_aberration": 0.015,
+      "blur_size": 0.2,
+      "images": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "ImageLensDistortion",
+    "_meta": {
+      "title": "Simular Óptica de Lente (Smartphone)"
+    }
+  },
+  "4": {
+    "inputs": {
+      "saturation": -0.05,
+      "contrast": 1.05,
+      "brightness": -0.02,
+      "images": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "ColorCorrect",
+    "_meta": {
+      "title": "Aplicar Perfil de Color (LUT Simulado)"
+    }
+  },
+  "5": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "Morpheus_Final_Veritas",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "images": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Guardar Vídeo Final Post-Procesado"
+    }
+  }
+}
