@@ -1,4 +1,4 @@
-# worker_server.py (Versión 20.1 - Veritas Fix)
+# worker_server.py (Versión 21.0 - Inyección Dinámica)
 import logging
 import json
 import os
@@ -77,7 +77,7 @@ except Exception as e:
     MORPHEUS_SYSTEM_PROMPT = FALLBACK_PROMPT
 
 
-app = FastAPI(title="Morpheus AI Pod (Veritas)", version="20.1")
+app = FastAPI(title="Morpheus AI Pod (Veritas)", version="21.0")
 
 @app.on_event("startup")
 async def startup_event():
@@ -360,47 +360,44 @@ def get_history(prompt_id):
     with request.urlopen(f"{COMFYUI_URL}/history/{prompt_id}") as response: return json.loads(response.read())
 
 def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Aplica los parámetros del payload al workflow JSON de ComfyUI."""
-    PARAM_MAP = {
-        "checkpoint_name": ("CheckpointLoaderSimple", "ckpt_name"),
-        "prompt": ("CLIPTextEncode", "text"),
-        "negative_prompt": ("CLIPTextEncode", "text"),
-        "seed": ("KSampler", "seed"), "steps": ("KSampler", "steps"),
-        "cfg_scale": ("KSampler", "cfg"), "sampler_name": ("KSampler", "sampler_name"),
-        "width": ("EmptyLatentImage", "width"), "height": ("EmptyLatentImage", "height"),
-        "actress_lora": ("LoraLoader", "lora_name"),
-        "target_image_pod_path": ("LoadImage", "image"), "mask_image_pod_path": ("LoadImage", "image"),
-        "target_video_pod_path": ("VHS_VideoLoader", "video"), "source_media_pod_path": ("LoadImage", "image"),
-        "audio_pod_path": ("LoadAudio", "audio_file"),
-        "pid_vector_path": ("LoadEmbeds", "embeds_path"),
-        "lens_distortion": ("ImageLensDistortion", "lens_distortion"),
-        "chromatic_aberration": ("ImageLensDistortion", "chromatic_aberration"),
-        "grain_amount": ("VHS_AddGrain", "amount"),
-        # [VERITAS OPTIMIZATION] Nuevo mapeo para la ruta del directorio
-        "captured_frames_dir_pod_path": ("LoadImageBatch", "directory")
-    }
+    """
+    [NUEVA IMPLEMENTACIÓN DINÁMICA]
+    Aplica los parámetros del payload al workflow JSON de ComfyUI de forma dinámica.
+    Busca placeholders en los inputs del workflow y los reemplaza con los valores del payload.
+    - `__param:key__`: Reemplaza con el valor directo de `payload[key]`.
+    - `__file:key__`: Reemplaza con el nombre base del archivo de la ruta en `payload[key]`.
+    - `__dir:key__`: Reemplaza con la ruta completa del directorio en `payload[key]`.
+    """
+    updated_workflow = json.loads(json.dumps(workflow_data)) # Deep copy
 
-    for key, value in payload.items():
-        if key in PARAM_MAP and value is not None:
-            node_class, input_name = PARAM_MAP[key]
-            for node_id, node in workflow_data.items():
-                meta_title = node.get("_meta", {}).get("title", "").lower()
-                if node.get("class_type") == node_class:
-                    if key == 'prompt' and "negative" in meta_title: continue
-                    if key == 'negative_prompt' and "negative" not in meta_title: continue
-                    if key == 'target_image_pod_path' and "mask" in meta_title: continue
-                    if key == 'mask_image_pod_path' and "mask" not in meta_title: continue
+    for node in updated_workflow.values():
+        if "inputs" in node:
+            for input_name, input_value in node["inputs"].items():
+                if isinstance(input_value, str) and input_value.startswith("__"):
+                    placeholder = input_value
                     
-                    # [VERITAS OPTIMIZATION] La lógica ahora maneja rutas de directorio y de archivo
-                    if node_class in ["LoadImage", "VHS_VideoLoader", "LoadAudio", "LoadEmbeds"]:
-                        node["inputs"][input_name] = os.path.basename(value)
-                    elif node_class == "LoadImageBatch":
-                        # Para LoadImageBatch, el valor es la ruta completa del directorio
-                        node["inputs"][input_name] = value
-                    else:
-                        node["inputs"][input_name] = value
-                    logger.info(f"Parámetro aplicado: Nodo '{node_id}' ({node_class}), Input '{input_name}' = '{value}'")
-    return workflow_data
+                    if placeholder.startswith("__param:"):
+                        key = placeholder.split(":")[1]
+                        if key in payload:
+                            node["inputs"][input_name] = payload[key]
+                            logger.info(f"Parámetro aplicado: Nodo '{node.get('class_type')}', Input '{input_name}' = '{payload[key]}'")
+                    
+                    elif placeholder.startswith("__file:"):
+                        key = placeholder.split(":")[1]
+                        if key in payload and payload[key] is not None:
+                            file_path = payload[key]
+                            node["inputs"][input_name] = os.path.basename(file_path)
+                            logger.info(f"Parámetro de archivo aplicado: Nodo '{node.get('class_type')}', Input '{input_name}' = '{os.path.basename(file_path)}'")
+
+                    elif placeholder.startswith("__dir:"):
+                        key = placeholder.split(":")[1]
+                        if key in payload and payload[key] is not None:
+                            dir_path = payload[key]
+                            node["inputs"][input_name] = dir_path
+                            logger.info(f"Parámetro de directorio aplicado: Nodo '{node.get('class_type')}', Input '{input_name}' = '{dir_path}'")
+                            
+    return updated_workflow
+
 
 def run_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str, Any]):
     job_dir = f"/workspace/job_data/{client_id}/output"
@@ -433,8 +430,6 @@ def run_live_animation_render_job_thread(client_id: str, config_payload: Dict[st
     try:
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
         
-        # [VERITAS OPTIMIZATION] Se elimina la copia de archivos.
-        # La ruta del directorio ya se pasa en el payload.
         source_frames_dir = config_payload.get("captured_frames_dir_pod_path")
         if not source_frames_dir or not os.path.exists(source_frames_dir):
             raise ValueError(f"No se encontró el directorio de fotogramas capturados en: {source_frames_dir}")
@@ -444,7 +439,6 @@ def run_live_animation_render_job_thread(client_id: str, config_payload: Dict[st
         workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", "live_animation_render.json")
         with open(workflow_path, 'r') as f: workflow_data = json.load(f)
         
-        # El payload ahora contiene 'captured_frames_dir_pod_path', que será mapeado por update_workflow_with_payload
         updated_workflow = update_workflow_with_payload(workflow_data, config_payload)
         output_files = run_comfyui_generation(updated_workflow, job_dir, client_id)
         
