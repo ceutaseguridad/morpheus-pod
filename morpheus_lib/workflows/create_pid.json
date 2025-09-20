@@ -1,0 +1,78 @@
+{
+  "1": {
+    "inputs": {
+      "directory": "input/dataset_images",
+      "image_load_cap": 50
+    },
+    "class_type": "LoadImageBatch",
+    "_meta": {
+      "title": "Cargar Lote de Imágenes del Dataset"
+    }
+  },
+  "2": {
+    "inputs": {
+      "model_name": "ip-adapter-plus-face_sdxl.bin"
+    },
+    "class_type": "IPAdapterModelLoader",
+    "_meta": {
+      "title": "Cargar Modelo IP-Adapter (FaceID)"
+    }
+  },
+  "3": {
+    "inputs": {
+      "image": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "Prep-C-INSIGHTFace",
+    "_meta": {
+      "title": "Preparar y Extraer Caras (InsightFace)"
+    }
+  },
+  "4": {
+    "inputs": {
+      "filename_prefix": "PID_Result",
+      "embeds": [
+        "3",
+        1
+      ]
+    },
+    "class_type": "SaveEmbeds",
+    "_meta": {
+      "title": "Guardar Paquete de Identidad Digital (PID)"
+    }
+  },
+  "5": {
+    "inputs": {
+      "ipadapter_model": [
+        "2",
+        0
+      ],
+      "ipadapter": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "IPAdapter",
+    "_meta": {
+      "title": "IPAdapter"
+    }
+  },
+  "6": {
+    "inputs": {
+      "embeds": [
+        "3",
+        1
+      ],
+      "ipadapter": [
+        "5",
+        1
+      ]
+    },
+    "class_type": "IPAdapterEmbeds",
+    "_meta": {
+      "title": "Codificar Embeddings de Identidad"
+    }
+  }
+}
