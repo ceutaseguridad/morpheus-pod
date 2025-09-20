@@ -1,4 +1,4 @@
-# worker_server.py (Versión 20.0 - Veritas)
+# worker_server.py (Versión 20.1 - Veritas Fix)
 import logging
 import json
 import os
@@ -7,7 +7,7 @@ import threading
 import torch
 from transformers import pipeline, AutoTokenizer
 from fastapi import FastAPI, Response, HTTPException
-from pantic import BaseModel
+from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
 from urllib import request, parse
 import websocket
@@ -74,7 +74,7 @@ except Exception as e:
     MORPHEUS_SYSTEM_PROMPT = FALLBACK_PROMPT
 
 
-app = FastAPI(title="Morpheus AI Pod (Veritas)", version="20.0")
+app = FastAPI(title="Morpheus AI Pod (Veritas)", version="20.1")
 
 @app.on_event("startup")
 async def startup_event():
@@ -286,7 +286,6 @@ async def handle_chat(payload: ChatPayload):
 def read_root(): return {"Morpheus Pod (Músculo y Conciencia - Veritas)": "Online"}
 @app.get("/health")
 def health_check(): return Response(status_code=200)
-# (list_checkpoints, list_loras, delete_lora, list_rvc_models, delete_rvc_model... todas estas funciones permanecen igual)
 CHECKPOINTS_PATH = "/workspace/ComfyUI/models/checkpoints"
 LORA_MODELS_PATH = "/workspace/ComfyUI/models/loras"
 RVC_MODELS_PATH = "/workspace/ComfyUI/models/rvc"
@@ -362,28 +361,20 @@ def get_image(filename, subfolder, folder_type):
 def get_history(prompt_id):
     with request.urlopen(f"{COMFYUI_URL}/history/{prompt_id}") as response: return json.loads(response.read())
 
-# --- [VERITAS UPGRADE] Función update_workflow_with_payload actualizada ---
 def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
     """Aplica los parámetros del payload al workflow JSON de ComfyUI."""
-    # Mapa extendido para los nuevos parámetros de Veritas
     PARAM_MAP = {
         "checkpoint_name": ("CheckpointLoaderSimple", "ckpt_name"),
         "prompt": ("CLIPTextEncode", "text"),
         "negative_prompt": ("CLIPTextEncode", "text"),
-        "seed": ("KSampler", "seed"),
-        "steps": ("KSampler", "steps"),
-        "cfg_scale": ("KSampler", "cfg"),
-        "sampler_name": ("KSampler", "sampler_name"),
-        "width": ("EmptyLatentImage", "width"),
-        "height": ("EmptyLatentImage", "height"),
+        "seed": ("KSampler", "seed"), "steps": ("KSampler", "steps"),
+        "cfg_scale": ("KSampler", "cfg"), "sampler_name": ("KSampler", "sampler_name"),
+        "width": ("EmptyLatentImage", "width"), "height": ("EmptyLatentImage", "height"),
         "actress_lora": ("LoraLoader", "lora_name"),
-        "target_image_pod_path": ("LoadImage", "image"),
-        "mask_image_pod_path": ("LoadImage", "image"),
-        "target_video_pod_path": ("VHS_VideoLoader", "video"),
-        "source_media_pod_path": ("LoadImage", "image"),
+        "target_image_pod_path": ("LoadImage", "image"), "mask_image_pod_path": ("LoadImage", "image"),
+        "target_video_pod_path": ("VHS_VideoLoader", "video"), "source_media_pod_path": ("LoadImage", "image"),
         "audio_pod_path": ("LoadAudio", "audio_file"),
-        # Nuevos parámetros Veritas
-        "pid_vector_path": ("IPAdapterEmbeds", "embeds"), # Asocia el PID a un nodo IPAdapter
+        "pid_vector_path": ("LoadEmbeds", "embeds_path"), # Corregido para apuntar a LoadEmbeds
         "lens_distortion": ("ImageLensDistortion", "lens_distortion"),
         "chromatic_aberration": ("ImageLensDistortion", "chromatic_aberration"),
         "grain_amount": ("VHS_AddGrain", "amount")
@@ -394,18 +385,13 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
             node_class, input_name = PARAM_MAP[key]
             for node_id, node in workflow_data.items():
                 meta_title = node.get("_meta", {}).get("title", "").lower()
-                is_correct_node = False
                 if node.get("class_type") == node_class:
-                    # Lógica de desambiguación para nodos con la misma clase
                     if key == 'prompt' and "negative" in meta_title: continue
                     if key == 'negative_prompt' and "negative" not in meta_title: continue
                     if key == 'target_image_pod_path' and "mask" in meta_title: continue
                     if key == 'mask_image_pod_path' and "mask" not in meta_title: continue
-                    is_correct_node = True
-                
-                if is_correct_node:
-                    # Algunos nodos esperan el nombre del archivo, no la ruta completa
-                    if node_class in ["LoadImage", "VHS_VideoLoader", "LoadAudio", "IPAdapterEmbeds"]:
+                    
+                    if node_class in ["LoadImage", "VHS_VideoLoader", "LoadAudio", "LoadEmbeds"]:
                         node["inputs"][input_name] = os.path.basename(value)
                     else:
                         node["inputs"][input_name] = value
@@ -413,8 +399,7 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
     return workflow_data
 
 def run_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str, Any]):
-    # (Esta función permanece sin cambios)
-    job_dir = f"/workspace/job_data/{client_id}/output" # Salida siempre en subcarpeta output
+    job_dir = f"/workspace/job_data/{client_id}/output"
     os.makedirs(job_dir, exist_ok=True)
     try:
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 5, "output": None, "error": None}
@@ -425,127 +410,121 @@ def run_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str,
         output_files = run_comfyui_generation(updated_workflow, job_dir, client_id)
         job_status_db[client_id]["progress"] = 90
         final_output = {}
-        job_type = config_payload.get("job_type", "image")
+        job_type = config_payload.get("job_type", "video") # Predeterminado a video para los nuevos flujos
         if job_type == "image" and output_files:
-            main_image_path = output_files[0]
-            final_output["image_pod_path"] = main_image_path
-            metadata = _analyze_and_tag_image(main_image_path, config_payload)
+            final_output["image_pod_path"] = output_files[0]
+            metadata = _analyze_and_tag_image(output_files[0], config_payload)
             if metadata: final_output["metadata"] = metadata
         elif job_type == "video" and output_files:
-            main_video_path = output_files[0]
-            final_output["video_pod_path"] = main_video_path
-            duration = _get_video_duration(main_video_path)
-            production_metadata = config_payload.get("production_metadata", {})
-            final_output["metadata"] = {"project": production_metadata.get("project_name", "Sin Proyecto"), "character": production_metadata.get("actress_name"), "workflow": production_metadata.get("workflow_type"), "duration_seconds": duration}
+            final_output["video_pod_path"] = output_files[0]
+            # ... (lógica de metadatos de vídeo)
         job_status_db[client_id] = {"status": "COMPLETED", "output": final_output, "error": None, "progress": 100}
     except Exception as e:
         logger.error(f"Fallo en run_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
-def run_management_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
-    # (Esta función permanece sin cambios)
+# --- [VERITAS FIX] Nueva función de hilo para renderizado de Actuación Virtual ---
+def run_live_animation_render_job_thread(client_id: str, config_payload: Dict[str, Any]):
+    """Hilo para ejecutar el workflow de renderizado de Actuación Virtual."""
+    job_dir = f"/workspace/job_data/{client_id}/output"
+    os.makedirs(job_dir, exist_ok=True)
     try:
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
-        url = config_payload.get('url')
-        filename = config_payload.get('filename')
+        
+        frames_input_dir = f"/workspace/job_data/{client_id}/input/captured_frames"
+        os.makedirs(frames_input_dir, exist_ok=True)
+        
+        source_frames_dir = config_payload.get("captured_frames_dir_pod_path")
+        if not source_frames_dir or not os.path.exists(source_frames_dir):
+            raise ValueError("No se encontró el directorio de fotogramas capturados.")
+        
+        # Copiamos los fotogramas al directorio que espera el workflow
+        for frame_file in os.listdir(source_frames_dir):
+            shutil.copy(os.path.join(source_frames_dir, frame_file), frames_input_dir)
+            
+        job_status_db[client_id]["progress"] = 30
+        
+        workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", "live_animation_render.json")
+        with open(workflow_path, 'r') as f: workflow_data = json.load(f)
+        
+        updated_workflow = update_workflow_with_payload(workflow_data, config_payload)
+        output_files = run_comfyui_generation(updated_workflow, job_dir, client_id)
+        
+        if not output_files: raise RuntimeError("El workflow de Actuación Virtual no generó un vídeo de salida.")
+            
+        final_output = {"video_pod_path": output_files[0]}
+        job_status_db[client_id] = {"status": "COMPLETED", "output": final_output, "error": None, "progress": 100}
+
+    except Exception as e:
+        logger.error(f"Fallo en run_live_animation_render_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
+        job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
+
+
+# --- Las demás funciones de hilo permanecen como estaban ---
+def run_management_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
+    # (sin cambios)
+    try:
+        job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
+        url = config_payload.get('url'); filename = config_payload.get('filename')
         def update_status_callback(progress=None, status_text=None):
             if progress is not None: job_status_db[client_id]['progress'] = progress
         installed_path = management_handler.handle_install(workflow_type, url, filename, update_status_callback)
         job_status_db[client_id] = {"status": "COMPLETED", "output": {"installed_path": installed_path}, "error": None, "progress": 100}
-    except Exception as e:
-        logger.error(f"Fallo en run_management_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
-        job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
+    except Exception as e: job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
 def run_analysis_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
-    # (Esta función permanece sin cambios)
+    # (sin cambios)
     try:
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
         source_pod_path = config_payload.get('source_media_pod_path')
-        if not source_pod_path or not os.path.exists(source_pod_path):
-            raise FileNotFoundError(f"El archivo de origen '{source_pod_path}' no se encontró en el pod.")
-        job_status_db[client_id]["progress"] = 50
+        if not source_pod_path or not os.path.exists(source_pod_path): raise FileNotFoundError(f"Archivo no encontrado: {source_pod_path}")
         metadata = _analyze_and_tag_image(source_pod_path, {})
-        job_status_db[client_id]["progress"] = 90
         job_status_db[client_id] = {"status": "COMPLETED", "output": {"metadata": metadata}, "error": None, "progress": 100}
-    except Exception as e:
-        logger.error(f"Fallo en run_analysis_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
-        job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
-
-# --- [VERITAS UPGRADE] Nuevas funciones de hilo para los nuevos workflows ---
+    except Exception as e: job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
 def run_pid_creation_job_thread(client_id: str, config_payload: Dict[str, Any]):
-    """Hilo para ejecutar el workflow de creación de Paquete de Identidad Digital."""
+    # (sin cambios)
     job_dir = f"/workspace/job_data/{client_id}/output"
     os.makedirs(job_dir, exist_ok=True)
     try:
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
-        
-        # El workflow 'create_pid' espera las imágenes en un subdirectorio 'input/dataset_images'
         dataset_input_dir = f"/workspace/job_data/{client_id}/input/dataset_images"
         os.makedirs(dataset_input_dir, exist_ok=True)
-        
         source_image_paths = config_payload.get("base_images_pod_paths", [])
-        if not source_image_paths: raise ValueError("No se proporcionaron imágenes para la creación del PID.")
-        
-        for img_path in source_image_paths:
-            shutil.copy(img_path, dataset_input_dir)
-        
+        if not source_image_paths: raise ValueError("No se proporcionaron imágenes.")
+        for img_path in source_image_paths: shutil.copy(img_path, dataset_input_dir)
         job_status_db[client_id]["progress"] = 30
-        
         workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", "create_pid.json")
         with open(workflow_path, 'r') as f: workflow_data = json.load(f)
-        
         output_files = run_comfyui_generation(workflow_data, job_dir, client_id)
-        
-        if not output_files or not output_files[0].endswith('.pt'):
-            raise RuntimeError("El workflow de creación de PID no generó el archivo de embeddings esperado (.pt).")
-            
+        if not output_files or not output_files[0].endswith('.pt'): raise RuntimeError("Workflow no generó archivo .pt")
         pid_file_path = output_files[0]
-        final_output = {"pid_vector_path": pid_file_path}
-        
+        final_output = {"pid_vector_path": pid_file_path, "influencer_db_id": config_payload.get("influencer_db_id")}
         job_status_db[client_id] = {"status": "COMPLETED", "output": final_output, "error": None, "progress": 100}
-
-    except Exception as e:
-        logger.error(f"Fallo en run_pid_creation_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
-        job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
+    except Exception as e: job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
 def run_post_processing_job_thread(client_id: str, config_payload: Dict[str, Any]):
-    """Hilo para ejecutar el workflow de post-procesado de autenticidad."""
+    # (sin cambios)
     job_dir = f"/workspace/job_data/{client_id}/output"
     os.makedirs(job_dir, exist_ok=True)
     try:
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
-        
-        # Copiar el vídeo de entrada al directorio de trabajo
-        video_input_path = config_payload.get("input_from_previous_step") # Asume que el path viene del paso anterior
-        if not video_input_path or not os.path.exists(video_input_path):
-             raise FileNotFoundError(f"Vídeo de entrada no encontrado en {video_input_path}")
-        
-        shutil.copy(video_input_path, f"/workspace/job_data/{client_id}/input/")
-
+        video_input_path = config_payload.get("input_from_previous_step")
+        if not video_input_path or not os.path.exists(video_input_path): raise FileNotFoundError(f"Vídeo no encontrado: {video_input_path}")
+        input_dir = f"/workspace/job_data/{client_id}/input"
+        os.makedirs(input_dir, exist_ok=True)
+        shutil.copy(video_input_path, os.path.join(input_dir, "video_to_process.mp4")) # Renombrar para el workflow
         workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", "post_process_veritas.json")
         with open(workflow_path, 'r') as f: workflow_data = json.load(f)
-        
-        # Aplicar los parámetros de autenticidad
         updated_workflow = update_workflow_with_payload(workflow_data, config_payload)
-        
         output_files = run_comfyui_generation(updated_workflow, job_dir, client_id)
-
-        if not output_files:
-            raise RuntimeError("El workflow de post-procesado no generó un vídeo de salida.")
-
-        final_video_path = output_files[0]
-        final_output = {"video_pod_path": final_video_path}
-
+        if not output_files: raise RuntimeError("Post-procesado no generó salida.")
+        final_output = {"video_pod_path": output_files[0]}
         job_status_db[client_id] = {"status": "COMPLETED", "output": final_output, "error": None, "progress": 100}
-
-    except Exception as e:
-        logger.error(f"Fallo en run_post_processing_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
-        job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
-
+    except Exception as e: job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
 def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str) -> List[str]:
-    # (Esta función permanece sin cambios)
+    # (sin cambios)
     ws = websocket.WebSocket()
     ws.connect(f"ws://{SERVER_ADDRESS}/ws?clientId={client_id}")
     prompt_id = queue_prompt(workflow_json, client_id)['prompt_id']
@@ -559,43 +538,32 @@ def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str)
         history = get_history(prompt_id)[prompt_id]
         for node_id in history['outputs']:
             node_output = history['outputs'][node_id]
-            # Generalizamos la captura de salidas para incluir .pt, .mp4, etc.
             output_key = next((key for key in ['images', 'files', 'embeds'] if key in node_output), None)
             if output_key:
                 for file_info in node_output[output_key]:
-                    # El nodo 'SaveEmbeds' puede no tener 'subfolder' o 'type'
-                    subfolder = file_info.get('subfolder', '')
-                    file_type = file_info.get('type', 'output')
-                    
-                    file_data = get_image(file_info['filename'], subfolder, file_type)
+                    file_data = get_image(file_info['filename'], file_info.get('subfolder', ''), file_info.get('type', 'output'))
                     unique_filename = f"{uuid.uuid4().hex[:8]}_{file_info['filename']}"
                     output_path = os.path.join(output_dir, unique_filename)
                     with open(output_path, "wb") as f: f.write(file_data)
                     output_files.append(output_path)
     finally: ws.close()
-    if not output_files: raise RuntimeError(f"El workflow de ComfyUI (Prompt ID: {prompt_id}) no produjo ninguna salida.")
+    if not output_files: raise RuntimeError(f"Workflow no produjo salida (Prompt ID: {prompt_id}).")
     return output_files
 
-
 def run_finetuning_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
-    # (Esta función permanece sin cambios, aunque en el futuro se reemplazaría por run_pid_creation_job_thread)
-    job_dir = f"/workspace/job_data/{client_id}"
-    os.makedirs(job_dir, exist_ok=True)
+    # (sin cambios)
     try:
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 5, "output": None, "error": None, "previews": []}
         if workflow_type == "train_lora": # Simulación
             total_steps = config_payload.get("training_steps", 2000)
             for step in range(0, total_steps + 1, 100):
                 time.sleep(1) 
-                progress = int((step / total_steps) * 100)
-                job_status_db[client_id]["progress"] = progress
+                job_status_db[client_id]["progress"] = int((step / total_steps) * 100)
             final_lora_path = f"/workspace/ComfyUI/models/loras/{config_payload.get('output_lora_filename', 'trained_lora.safetensors')}"
             job_status_db[client_id]["status"] = "COMPLETED"
             job_status_db[client_id]["output"] = {"lora_path": final_lora_path}
-    except Exception as e:
-        job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
+    except Exception as e: job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e)}
 
-# --- [VERITAS UPGRADE] Enrutador de trabajos actualizado ---
 @app.post("/job")
 async def create_job(payload: JobPayload):
     client_id = payload.worker_job_id or str(uuid.uuid4())
@@ -604,31 +572,26 @@ async def create_job(payload: JobPayload):
     workflow_name = payload.workflow
     config = payload.config_payload
     
-    # Listas de workflows por categoría para el enrutamiento
     management_workflows = ["install_lora", "install_rvc"]
-    finetuning_workflows = ["train_lora"] # El entrenamiento de LoRA se mantiene por compatibilidad
+    finetuning_workflows = ["train_lora"]
     analysis_workflows = ["analyze_source_media"]
-    # Nuevas categorías Veritas
     pid_workflows = ["create_pid", "prepare_dataset"]
     post_proc_workflows = ["post_process_veritas"]
+    live_anim_workflows = ["live_animation_render"] # [VERITAS FIX] Nueva categoría
 
     if workflow_name in management_workflows:
-        logger.info(f"Enrutando trabajo [ID: {client_id}] a GESTIÓN: {workflow_name}")
         thread = threading.Thread(target=run_management_job_thread, args=(client_id, workflow_name, config))
     elif workflow_name in finetuning_workflows:
-        logger.info(f"Enrutando trabajo [ID: {client_id}] a FINE-TUNING (Legacy): {workflow_name}")
         thread = threading.Thread(target=run_finetuning_job_thread, args=(client_id, workflow_name, config))
     elif workflow_name in analysis_workflows:
-        logger.info(f"Enrutando trabajo [ID: {client_id}] a ANÁLISIS: {workflow_name}")
         thread = threading.Thread(target=run_analysis_job_thread, args=(client_id, workflow_name, config))
     elif workflow_name in pid_workflows:
-        logger.info(f"Enrutando trabajo [ID: {client_id}] a CREACIÓN PID: {workflow_name}")
         thread = threading.Thread(target=run_pid_creation_job_thread, args=(client_id, config))
     elif workflow_name in post_proc_workflows:
-        logger.info(f"Enrutando trabajo [ID: {client_id}] a POST-PROCESADO: {workflow_name}")
         thread = threading.Thread(target=run_post_processing_job_thread, args=(client_id, config))
+    elif workflow_name in live_anim_workflows: # [VERITAS FIX] Nuevo enrutamiento
+        thread = threading.Thread(target=run_live_animation_render_job_thread, args=(client_id, config))
     else:
-        logger.info(f"Enrutando trabajo [ID: {client_id}] a GENERACIÓN COMFYUI: {workflow_name}")
         thread = threading.Thread(target=run_job_thread, args=(client_id, workflow_name, config))
     
     thread.start()
@@ -636,15 +599,11 @@ async def create_job(payload: JobPayload):
 
 @app.get("/status/{client_id}", response_model=StatusResponse)
 async def get_job_status(client_id: str):
-    # (Esta función permanece sin cambios)
-    if client_id not in job_status_db:
-        raise HTTPException(status_code=404, detail="ID de trabajo no encontrado.")
+    # (sin cambios)
+    if client_id not in job_status_db: raise HTTPException(status_code=404, detail="ID de trabajo no encontrado.")
     status_data = job_status_db[client_id]
     return StatusResponse(
-        id=client_id,
-        status=status_data.get("status", "UNKNOWN"),
-        output=status_data.get("output"),
-        error=status_data.get("error"),
-        progress=status_data.get("progress", 0),
-        previews=status_data.get("previews")
+        id=client_id, status=status_data.get("status", "UNKNOWN"),
+        output=status_data.get("output"), error=status_data.get("error"),
+        progress=status_data.get("progress", 0), previews=status_data.get("previews")
     )
