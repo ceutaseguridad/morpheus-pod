@@ -1,0 +1,174 @@
+{
+  "1": {
+    "inputs": {
+      "video": "__file:target_video_pod_path__",
+      "force_rate": 24,
+      "force_size": "unchanged",
+      "frame_load_cap": 0
+    },
+    "class_type": "VHS_VideoLoader",
+    "_meta": {
+      "title": "Cargar Vídeo Objetivo"
+    }
+  },
+  "2": {
+    "inputs": {
+      "ckpt_name": "sora_v2_alt_1_2.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Cargar Modelo Base de Vídeo"
+    }
+  },
+  "3": {
+    "inputs": {
+      "text": "RAW photo, best quality, masterpiece",
+      "clip": [
+        "10",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Prompt Positivo (Genérico)"
+    }
+  },
+  "4": {
+    "inputs": {
+      "text": "ugly, blurry, deformed, worst quality, cartoon, anime",
+      "clip": [
+        "10",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Prompt Negativo (Genérico)"
+    }
+  },
+  "5": {
+    "inputs": {
+      "seed": "__param:seed__",
+      "steps": 25,
+      "cfg": 7.0,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 0.65,
+      "model": [
+        "10",
+        0
+      ],
+      "positive": [
+        "3",
+        0
+      ],
+      "negative": [
+        "4",
+        0
+      ],
+      "latent_image": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler (Img2Img sobre Frames)"
+    }
+  },
+  "6": {
+    "inputs": {
+      "pixels": [
+        "1",
+        0
+      ],
+      "vae": [
+        "2",
+        2
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "Codificar Frames a Latente"
+    }
+  },
+  "7": {
+    "inputs": {
+      "samples": [
+        "5",
+        0
+      ],
+      "vae": [
+        "2",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decodificar Resultado a Frames"
+    }
+  },
+  "8": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "Morpheus_Video_Transfer",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "images": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Guardar Vídeo Final"
+    }
+  },
+  "9": {
+    "inputs": {
+      "embeds_path": "__file:pid_vector_path__"
+    },
+    "class_type": "LoadEmbeds",
+    "_meta": {
+      "title": "Cargar Paquete de Identidad Digital (PID)"
+    }
+  },
+  "10": {
+    "inputs": {
+      "weight": 0.85,
+      "weight_type": "standard",
+      "start_at": 0,
+      "end_at": 1,
+      "model": [
+        "2",
+        0
+      ],
+      "clip": [
+        "2",
+        1
+      ],
+      "ipadapter": [
+        "11",
+        0
+      ],
+      "image": [
+        "9",
+        0
+      ]
+    },
+    "class_type": "IPAdapterApply",
+    "_meta": {
+      "title": "Aplicar Identidad (PID) al Modelo"
+    }
+  },
+  "11": {
+    "inputs": {
+      "model_name": "ip-adapter-plus-face_sdxl.bin"
+    },
+    "class_type": "IPAdapterModelLoader",
+    "_meta": {
+      "title": "Cargar Modelo IP-Adapter (FaceID)"
+    }
+  }
+}
