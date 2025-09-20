@@ -1,12 +1,17 @@
-# modelos.txt v4.0 (Estable y Controlado)
+# modelos.txt v5.0 (Veritas Prime Engines)
 # Formato: <subdirectorio_en_ComfyUI/models>,<URL_de_descarga>
 
-# --- Checkpoints ---
-checkpoints,https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors
+# --- [MOTOR UPGRADE] Checkpoint de Imagen Base ---
+checkpoints,https://huggingface.co/stabilityai/stable-diffusion-3-medium/resolve/main/sd3_medium.safetensors
 
-# --- LoRAs ---
-# Se reemplaza el enlace de Google Drive por el enlace estable de tu repositorio en Hugging Face.
+# --- [MOTOR UPGRADE] Modelo de Vídeo Base ---
+animatediff_models,https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/resolve/main/svd_xt_1_1.safetensors
+
+# --- [MOTOR UPGRADE] Modelo de Animación Facial ---
+wav2lip,https://huggingface.co/Morpheus/EMO-Face-Animator/resolve/main/emo_v1.pth
+
+# --- Modelo de Identidad (sigue siendo el mismo y muy eficaz) ---
+ipadapter,https://huggingface.co/h94/IP-Adapter/resolve/main/models/ip-adapter-plus-face_sdxl.bin
+
+# --- LoRAs de utilidad ---
 loras,https://huggingface.co/Jchack/morpheus/resolve/main/detailer-xl.safetensors
-
-# --- Otros Modelos ---
-animatediff_models,https://huggingface.co/guoyww/animatediff/resolve/main/mm_sd_v15_v2.ckpt
