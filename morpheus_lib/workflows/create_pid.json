@@ -1,7 +1,7 @@
 {
   "1": {
     "inputs": {
-      "directory": "input/dataset_images",
+      "directory": "__dir:base_images_pod_paths__",
       "image_load_cap": 50
     },
     "class_type": "LoadImageBatch",
