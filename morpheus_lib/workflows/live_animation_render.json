@@ -1,7 +1,7 @@
 {
   "1": {
     "inputs": {
-      "directory": "./input/placeholder_dir",
+      "directory": "__dir:captured_frames_dir_pod_path__",
       "image_load_cap": 300,
       "sort_method": "numerical"
     },
@@ -47,7 +47,7 @@
   },
   "5": {
     "inputs": {
-      "seed": 0,
+      "seed": "__param:seed__",
       "steps": 20,
       "cfg": 7,
       "sampler_name": "euler",
@@ -126,7 +126,7 @@
   },
   "9": {
     "inputs": {
-      "embeds_path": "pid_vector.pt"
+      "embeds_path": "__file:pid_vector_path__"
     },
     "class_type": "LoadEmbeds",
     "_meta": {
