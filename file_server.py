@@ -1,4 +1,4 @@
-# file_server.py
+# file_server.py (Versión 2.0 - Soporte para Subdirectorios)
 from flask import Flask, request, jsonify, send_from_directory
 import os
 import uuid
@@ -31,6 +31,7 @@ def upload_file():
     """
     Maneja la subida de archivos. Asocia el archivo con un ID de trabajo.
     Si no se proporciona un ID, crea uno nuevo.
+    [NUEVO] Acepta un parámetro 'sub_dir' para organizar los archivos de entrada.
     """
     logger.info("Endpoint /upload llamado.")
     if 'file' not in request.files:
@@ -43,12 +44,23 @@ def upload_file():
         return jsonify({"error": "No se seleccionó ningún archivo"}), 400
 
     worker_job_id = request.form.get('worker_job_id') or str(uuid.uuid4())
-    logger.info(f"Recibida solicitud de subida para job_id: {worker_job_id}, filename: {file.filename}")
+    sub_dir = request.form.get('sub_dir') # Leer el nuevo parámetro opcional
+    
+    logger.info(f"Recibida solicitud de subida para job_id: {worker_job_id}, filename: {file.filename}, sub_dir: {sub_dir}")
 
     job_input_dir = os.path.join(BASE_DIR, worker_job_id, "input")
-    os.makedirs(job_input_dir, exist_ok=True)
+    
+    # Si se especifica un subdirectorio, se añade a la ruta
+    if sub_dir:
+        # Sanear el nombre del subdirectorio para evitar ataques de path traversal
+        safe_sub_dir = "".join(c for c in sub_dir if c.isalnum() or c in ('_', '-')).rstrip()
+        final_dir = os.path.join(job_input_dir, safe_sub_dir)
+    else:
+        final_dir = job_input_dir
 
-    save_path = os.path.join(job_input_dir, file.filename)
+    os.makedirs(final_dir, exist_ok=True)
+
+    save_path = os.path.join(final_dir, file.filename)
     try:
         file.save(save_path)
         logger.info(f"Archivo '{file.filename}' subido con éxito para el Job [ID: {worker_job_id}] a '{save_path}'")
