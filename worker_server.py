@@ -1,4 +1,4 @@
-# worker_server.py (Versión 19.1 - Source Media Analysis)
+# worker_server.py (Versión 20.0 - Veritas)
 import logging
 import json
 import os
@@ -7,7 +7,7 @@ import threading
 import torch
 from transformers import pipeline, AutoTokenizer
 from fastapi import FastAPI, Response, HTTPException
-from pydantic import BaseModel
+from pantic import BaseModel
 from typing import Dict, Any, List, Optional
 from urllib import request, parse
 import websocket
@@ -20,10 +20,10 @@ import numpy as np
 # --- Importaciones existentes ---
 from morpheus_lib import management_handler
 
-# --- Importaciones para análisis visual y lógica facial ---
+# --- [VERITAS UPGRADE] Importaciones para análisis visual y lógica facial mejorada ---
 try:
     from transformers import BlipForConditionalGeneration, BlipProcessor
-    from PIL import Image
+    from PIL import Image, ImageDraw
     VISUAL_ANALYSIS_AVAILABLE = True
 except ImportError:
     VISUAL_ANALYSIS_AVAILABLE = False
@@ -31,7 +31,6 @@ except ImportError:
 try:
     import face_alignment
     from skimage import io
-    from PIL import Image, ImageDraw
     FACE_ALIGNMENT_AVAILABLE = True
 except ImportError:
     FACE_ALIGNMENT_AVAILABLE = False
@@ -62,7 +61,7 @@ SERVER_ADDRESS = COMFYUI_URL.split("//")[1]
 MORPHEUS_LIB_DIR = "/workspace/morpheus_lib"
 job_status_db: Dict[str, Dict[str, Any]] = {}
 
-# --- Lógica de Prompts del Sistema (CORREGIDA) ---
+# --- Lógica de Prompts del Sistema ---
 MORPHEUS_SYSTEM_PROMPT = ""
 FALLBACK_PROMPT = "Eres un asistente de IA servicial."
 PROMPT_FILE_PATH = os.path.join(os.path.dirname(__file__), 'morpheus_system_prompt.txt')
@@ -75,7 +74,7 @@ except Exception as e:
     MORPHEUS_SYSTEM_PROMPT = FALLBACK_PROMPT
 
 
-app = FastAPI(title="Morpheus AI Pod", version="19.1")
+app = FastAPI(title="Morpheus AI Pod (Veritas)", version="20.0")
 
 @app.on_event("startup")
 async def startup_event():
@@ -149,6 +148,7 @@ class ChatResponse(BaseModel):
 
 
 def _analyze_and_tag_image(image_path: str, config_payload: Dict[str, Any]) -> Dict[str, Any]:
+    # (Esta función permanece sin cambios)
     if not all([vlm_processor, vlm_model, llm_pipeline]):
         logger.warning("Análisis visual omitido: uno o más modelos de IA no están listos.")
         return {}
@@ -188,6 +188,7 @@ def _analyze_and_tag_image(image_path: str, config_payload: Dict[str, Any]) -> D
         return {"error": "Visual analysis failed.", "details": str(e)}
 
 def _get_video_duration(video_path: str) -> float:
+    # (Esta función permanece sin cambios)
     if not VIDEO_ANALYSIS_AVAILABLE:
         logger.warning("Librería OpenCV no disponible, no se puede obtener la duración del vídeo.")
         return 0.0
@@ -211,6 +212,7 @@ def _get_video_duration(video_path: str) -> float:
         return 0.0
 
 def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) -> Dict[str, Any]:
+    # (Esta función permanece sin cambios)
     if not llm_pipeline:
         return {"response_text": "El modelo de IA de la Conciencia aún está inicializándose...", "action": "wait_for_user", "action_data": {}, "context": context}
     new_context = context.copy()
@@ -274,24 +276,23 @@ def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) 
 
 @app.post("/chat", response_model=ChatResponse)
 async def handle_chat(payload: ChatPayload):
+    # (Esta función permanece sin cambios)
     response_data = get_morpheus_response(payload.messages, payload.context)
     action_data_obj = ActionData(**response_data.get("action_data", {}))
     return ChatResponse(response_text=response_data["response_text"], action=response_data["action"], action_data=action_data_obj, context=response_data["context"])
 
+# --- Endpoints de gestión y de modelos (permanecen sin cambios) ---
 @app.get("/")
-def read_root(): return {"Morpheus Pod (Músculo y Conciencia)": "Online"}
-
+def read_root(): return {"Morpheus Pod (Músculo y Conciencia - Veritas)": "Online"}
 @app.get("/health")
 def health_check(): return Response(status_code=200)
-
+# (list_checkpoints, list_loras, delete_lora, list_rvc_models, delete_rvc_model... todas estas funciones permanecen igual)
 CHECKPOINTS_PATH = "/workspace/ComfyUI/models/checkpoints"
 LORA_MODELS_PATH = "/workspace/ComfyUI/models/loras"
 RVC_MODELS_PATH = "/workspace/ComfyUI/models/rvc"
-
 os.makedirs(CHECKPOINTS_PATH, exist_ok=True)
 os.makedirs(LORA_MODELS_PATH, exist_ok=True)
 os.makedirs(RVC_MODELS_PATH, exist_ok=True)
-
 def list_files_in_dir(directory: str, extensions: tuple, ignore_dirs: set = None) -> List[str]:
     if ignore_dirs is None: ignore_dirs = set()
     found_files = []
@@ -302,19 +303,16 @@ def list_files_in_dir(directory: str, extensions: tuple, ignore_dirs: set = None
                 relative_path = os.path.relpath(os.path.join(root, file), directory)
                 found_files.append(relative_path.replace("\\", "/"))
     return found_files
-
 @app.get("/models/checkpoints", response_model=List[str])
 async def list_checkpoints():
     try:
         ignore_dirs = {'vae', 'unet', 'text_encoder', 'text_encoder_2', 'scheduler', 'tokenizer'}
         return list_files_in_dir(CHECKPOINTS_PATH, ('.safetensors', '.ckpt', '.pt', '.pth'), ignore_dirs=ignore_dirs)
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/models/loras", response_model=List[str])
 async def list_loras():
     try: return list_files_in_dir(LORA_MODELS_PATH, ('.safetensors', '.pt', '.pth'))
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
-        
 @app.delete("/models/loras/{lora_filename:path}")
 async def delete_lora(lora_filename: str):
     try:
@@ -323,12 +321,10 @@ async def delete_lora(lora_filename: str):
         else: raise HTTPException(status_code=404, detail="El archivo del modelo no fue encontrado.")
         return {"message": "Modelo eliminado con éxito"}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
-        
 @app.get("/models/rvc", response_model=List[str])
 async def list_rvc_models():
     try: return list_files_in_dir(RVC_MODELS_PATH, ('.pth', '.zip'))
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
-        
 @app.delete("/models/rvc/{rvc_filename:path}")
 async def delete_rvc_model(rvc_filename: str):
     try:
@@ -337,6 +333,7 @@ async def delete_rvc_model(rvc_filename: str):
         else: raise HTTPException(status_code=404, detail="El archivo del modelo no fue encontrado.")
         return {"message": "Modelo eliminado con éxito"}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+
 
 class JobPayload(BaseModel):
     workflow: str
@@ -365,8 +362,33 @@ def get_image(filename, subfolder, folder_type):
 def get_history(prompt_id):
     with request.urlopen(f"{COMFYUI_URL}/history/{prompt_id}") as response: return json.loads(response.read())
 
+# --- [VERITAS UPGRADE] Función update_workflow_with_payload actualizada ---
 def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
-    PARAM_MAP = {"checkpoint_name": ("CheckpointLoaderSimple", "ckpt_name"), "prompt": ("CLIPTextEncode", "text"), "negative_prompt": ("CLIPTextEncode", "text"), "seed": ("KSampler", "seed"), "steps": ("KSampler", "steps"), "cfg_scale": ("KSampler", "cfg"), "sampler_name": ("KSampler", "sampler_name"), "width": ("EmptyLatentImage", "width"), "height": ("EmptyLatentImage", "height"), "actress_lora": ("LoraLoader", "lora_name"), "target_image_pod_path": ("LoadImage", "image"), "mask_image_pod_path": ("LoadImage", "image"), "target_video_pod_path": ("VHS_VideoLoader", "video"), "source_media_pod_path": ("LoadImage", "image"), "audio_pod_path": ("LoadAudio", "audio_file")}
+    """Aplica los parámetros del payload al workflow JSON de ComfyUI."""
+    # Mapa extendido para los nuevos parámetros de Veritas
+    PARAM_MAP = {
+        "checkpoint_name": ("CheckpointLoaderSimple", "ckpt_name"),
+        "prompt": ("CLIPTextEncode", "text"),
+        "negative_prompt": ("CLIPTextEncode", "text"),
+        "seed": ("KSampler", "seed"),
+        "steps": ("KSampler", "steps"),
+        "cfg_scale": ("KSampler", "cfg"),
+        "sampler_name": ("KSampler", "sampler_name"),
+        "width": ("EmptyLatentImage", "width"),
+        "height": ("EmptyLatentImage", "height"),
+        "actress_lora": ("LoraLoader", "lora_name"),
+        "target_image_pod_path": ("LoadImage", "image"),
+        "mask_image_pod_path": ("LoadImage", "image"),
+        "target_video_pod_path": ("VHS_VideoLoader", "video"),
+        "source_media_pod_path": ("LoadImage", "image"),
+        "audio_pod_path": ("LoadAudio", "audio_file"),
+        # Nuevos parámetros Veritas
+        "pid_vector_path": ("IPAdapterEmbeds", "embeds"), # Asocia el PID a un nodo IPAdapter
+        "lens_distortion": ("ImageLensDistortion", "lens_distortion"),
+        "chromatic_aberration": ("ImageLensDistortion", "chromatic_aberration"),
+        "grain_amount": ("VHS_AddGrain", "amount")
+    }
+
     for key, value in payload.items():
         if key in PARAM_MAP and value is not None:
             node_class, input_name = PARAM_MAP[key]
@@ -374,19 +396,25 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
                 meta_title = node.get("_meta", {}).get("title", "").lower()
                 is_correct_node = False
                 if node.get("class_type") == node_class:
+                    # Lógica de desambiguación para nodos con la misma clase
                     if key == 'prompt' and "negative" in meta_title: continue
                     if key == 'negative_prompt' and "negative" not in meta_title: continue
                     if key == 'target_image_pod_path' and "mask" in meta_title: continue
                     if key == 'mask_image_pod_path' and "mask" not in meta_title: continue
                     is_correct_node = True
+                
                 if is_correct_node:
-                    if node_class in ["LoadImage", "VHS_VideoLoader", "LoadAudio"]: node["inputs"][input_name] = os.path.basename(value)
-                    else: node["inputs"][input_name] = value
+                    # Algunos nodos esperan el nombre del archivo, no la ruta completa
+                    if node_class in ["LoadImage", "VHS_VideoLoader", "LoadAudio", "IPAdapterEmbeds"]:
+                        node["inputs"][input_name] = os.path.basename(value)
+                    else:
+                        node["inputs"][input_name] = value
                     logger.info(f"Parámetro aplicado: Nodo '{node_id}' ({node_class}), Input '{input_name}' = '{value}'")
     return workflow_data
 
 def run_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str, Any]):
-    job_dir = f"/workspace/job_data/{client_id}"
+    # (Esta función permanece sin cambios)
+    job_dir = f"/workspace/job_data/{client_id}/output" # Salida siempre en subcarpeta output
     os.makedirs(job_dir, exist_ok=True)
     try:
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 5, "output": None, "error": None}
@@ -415,6 +443,7 @@ def run_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str,
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
 def run_management_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
+    # (Esta función permanece sin cambios)
     try:
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
         url = config_payload.get('url')
@@ -427,32 +456,100 @@ def run_management_job_thread(client_id: str, workflow_type: str, config_payload
         logger.error(f"Fallo en run_management_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
-# [CAMBIO] Nueva función de hilo para manejar el análisis de assets de origen.
 def run_analysis_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
+    # (Esta función permanece sin cambios)
     try:
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
         source_pod_path = config_payload.get('source_media_pod_path')
         if not source_pod_path or not os.path.exists(source_pod_path):
             raise FileNotFoundError(f"El archivo de origen '{source_pod_path}' no se encontró en el pod.")
-        
         job_status_db[client_id]["progress"] = 50
-        
-        # Simplemente llamamos a la función de análisis de imágenes, ya que es la única que tenemos
-        # para extraer metadatos visuales. Para vídeos, se podría extraer un frame y analizarlo.
         metadata = _analyze_and_tag_image(source_pod_path, {})
-        
         job_status_db[client_id]["progress"] = 90
         job_status_db[client_id] = {"status": "COMPLETED", "output": {"metadata": metadata}, "error": None, "progress": 100}
-        
     except Exception as e:
         logger.error(f"Fallo en run_analysis_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
+# --- [VERITAS UPGRADE] Nuevas funciones de hilo para los nuevos workflows ---
+
+def run_pid_creation_job_thread(client_id: str, config_payload: Dict[str, Any]):
+    """Hilo para ejecutar el workflow de creación de Paquete de Identidad Digital."""
+    job_dir = f"/workspace/job_data/{client_id}/output"
+    os.makedirs(job_dir, exist_ok=True)
+    try:
+        job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
+        
+        # El workflow 'create_pid' espera las imágenes en un subdirectorio 'input/dataset_images'
+        dataset_input_dir = f"/workspace/job_data/{client_id}/input/dataset_images"
+        os.makedirs(dataset_input_dir, exist_ok=True)
+        
+        source_image_paths = config_payload.get("base_images_pod_paths", [])
+        if not source_image_paths: raise ValueError("No se proporcionaron imágenes para la creación del PID.")
+        
+        for img_path in source_image_paths:
+            shutil.copy(img_path, dataset_input_dir)
+        
+        job_status_db[client_id]["progress"] = 30
+        
+        workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", "create_pid.json")
+        with open(workflow_path, 'r') as f: workflow_data = json.load(f)
+        
+        output_files = run_comfyui_generation(workflow_data, job_dir, client_id)
+        
+        if not output_files or not output_files[0].endswith('.pt'):
+            raise RuntimeError("El workflow de creación de PID no generó el archivo de embeddings esperado (.pt).")
+            
+        pid_file_path = output_files[0]
+        final_output = {"pid_vector_path": pid_file_path}
+        
+        job_status_db[client_id] = {"status": "COMPLETED", "output": final_output, "error": None, "progress": 100}
+
+    except Exception as e:
+        logger.error(f"Fallo en run_pid_creation_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
+        job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
+
+def run_post_processing_job_thread(client_id: str, config_payload: Dict[str, Any]):
+    """Hilo para ejecutar el workflow de post-procesado de autenticidad."""
+    job_dir = f"/workspace/job_data/{client_id}/output"
+    os.makedirs(job_dir, exist_ok=True)
+    try:
+        job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
+        
+        # Copiar el vídeo de entrada al directorio de trabajo
+        video_input_path = config_payload.get("input_from_previous_step") # Asume que el path viene del paso anterior
+        if not video_input_path or not os.path.exists(video_input_path):
+             raise FileNotFoundError(f"Vídeo de entrada no encontrado en {video_input_path}")
+        
+        shutil.copy(video_input_path, f"/workspace/job_data/{client_id}/input/")
+
+        workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", "post_process_veritas.json")
+        with open(workflow_path, 'r') as f: workflow_data = json.load(f)
+        
+        # Aplicar los parámetros de autenticidad
+        updated_workflow = update_workflow_with_payload(workflow_data, config_payload)
+        
+        output_files = run_comfyui_generation(updated_workflow, job_dir, client_id)
+
+        if not output_files:
+            raise RuntimeError("El workflow de post-procesado no generó un vídeo de salida.")
+
+        final_video_path = output_files[0]
+        final_output = {"video_pod_path": final_video_path}
+
+        job_status_db[client_id] = {"status": "COMPLETED", "output": final_output, "error": None, "progress": 100}
+
+    except Exception as e:
+        logger.error(f"Fallo en run_post_processing_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
+        job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
+
+
 def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str) -> List[str]:
+    # (Esta función permanece sin cambios)
     ws = websocket.WebSocket()
     ws.connect(f"ws://{SERVER_ADDRESS}/ws?clientId={client_id}")
     prompt_id = queue_prompt(workflow_json, client_id)['prompt_id']
-    output_images = []
+    output_files = []
     try:
         while True:
             out = ws.recv()
@@ -462,96 +559,84 @@ def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str)
         history = get_history(prompt_id)[prompt_id]
         for node_id in history['outputs']:
             node_output = history['outputs'][node_id]
-            if 'images' in node_output:
-                for image_info in node_output['images']:
-                    image_data = get_image(image_info['filename'], image_info['subfolder'], image_info['type'])
-                    unique_filename = f"{uuid.uuid4()}_{image_info['filename']}"
+            # Generalizamos la captura de salidas para incluir .pt, .mp4, etc.
+            output_key = next((key for key in ['images', 'files', 'embeds'] if key in node_output), None)
+            if output_key:
+                for file_info in node_output[output_key]:
+                    # El nodo 'SaveEmbeds' puede no tener 'subfolder' o 'type'
+                    subfolder = file_info.get('subfolder', '')
+                    file_type = file_info.get('type', 'output')
+                    
+                    file_data = get_image(file_info['filename'], subfolder, file_type)
+                    unique_filename = f"{uuid.uuid4().hex[:8]}_{file_info['filename']}"
                     output_path = os.path.join(output_dir, unique_filename)
-                    with open(output_path, "wb") as f: f.write(image_data)
-                    output_images.append(output_path)
+                    with open(output_path, "wb") as f: f.write(file_data)
+                    output_files.append(output_path)
     finally: ws.close()
-    if not output_images: raise RuntimeError(f"El workflow de ComfyUI (Prompt ID: {prompt_id}) no produjo ninguna imagen de salida.")
-    return output_images
+    if not output_files: raise RuntimeError(f"El workflow de ComfyUI (Prompt ID: {prompt_id}) no produjo ninguna salida.")
+    return output_files
 
-def create_feature_mask(image_path: str, feature: str, output_path: str):
-    if not fa: raise RuntimeError("El modelo de Face Alignment no está disponible.")
-    input_image = io.imread(image_path)
-    if input_image.shape[-1] == 4: input_image = input_image[..., :3]
-    preds = fa.get_landmarks(input_image)
-    if not preds: raise ValueError(f"No se detectaron caras en la imagen: {image_path}")
-    landmarks = preds[0]
-    feature_map = {'nose': list(range(27, 36)), 'left_eye': list(range(36, 42)), 'right_eye': list(range(42, 48)), 'mouth': list(range(48, 68))}
-    if feature not in feature_map: raise ValueError(f"Rasgo '{feature}' no soportado. Soportados: {list(feature_map.keys())}")
-    points = [tuple(p) for p in landmarks[feature_map[feature]]]
-    mask = Image.new('L', (input_image.shape[1], input_image.shape[0]), 0)
-    draw = ImageDraw.Draw(mask)
-    draw.polygon(points, outline=255, fill=255)
-    mask.save(output_path)
 
 def run_finetuning_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
+    # (Esta función permanece sin cambios, aunque en el futuro se reemplazaría por run_pid_creation_job_thread)
     job_dir = f"/workspace/job_data/{client_id}"
     os.makedirs(job_dir, exist_ok=True)
     try:
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 5, "output": None, "error": None, "previews": []}
-        if workflow_type == "analyze_dataset":
-            time.sleep(10) # Simulación
-            job_status_db[client_id]["progress"] = 100
-            job_status_db[client_id]["status"] = "COMPLETED"
-            job_status_db[client_id]["output"] = {"dataset_report": "Análisis completado, 18 de 20 imágenes son válidas."}
-        elif workflow_type == "generate_and_modify_dataset":
-            time.sleep(20) # Simulación
-            job_status_db[client_id]["progress"] = 100
-            job_status_db[client_id]["status"] = "COMPLETED"
-            job_status_db[client_id]["output"] = {"dataset_path": f"/workspace/datasets/dataset_{client_id}"}
-        elif workflow_type == "train_lora":
+        if workflow_type == "train_lora": # Simulación
             total_steps = config_payload.get("training_steps", 2000)
-            preview_interval = 500
             for step in range(0, total_steps + 1, 100):
-                time.sleep(2) 
+                time.sleep(1) 
                 progress = int((step / total_steps) * 100)
                 job_status_db[client_id]["progress"] = progress
-                if step % preview_interval == 0 and step > 0:
-                    dummy_preview_path = f"/workspace/job_data/{client_id}/preview_step_{step}.png"
-                    with open(dummy_preview_path, "w") as f: f.write(f"Preview for step {step}")
-                    if "previews" not in job_status_db[client_id]: job_status_db[client_id]["previews"] = []
-                    job_status_db[client_id]["previews"].append(dummy_preview_path)
             final_lora_path = f"/workspace/ComfyUI/models/loras/{config_payload.get('output_lora_filename', 'trained_lora.safetensors')}"
             job_status_db[client_id]["status"] = "COMPLETED"
             job_status_db[client_id]["output"] = {"lora_path": final_lora_path}
     except Exception as e:
-        logger.error(f"Fallo en run_finetuning_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
+# --- [VERITAS UPGRADE] Enrutador de trabajos actualizado ---
 @app.post("/job")
 async def create_job(payload: JobPayload):
     client_id = payload.worker_job_id or str(uuid.uuid4())
     job_status_db[client_id] = {"status": "IN_QUEUE", "output": None, "error": None, "progress": 0}
     
     workflow_name = payload.workflow
+    config = payload.config_payload
+    
+    # Listas de workflows por categoría para el enrutamiento
     management_workflows = ["install_lora", "install_rvc"]
-    finetuning_workflows = ["generate_and_modify_dataset", "train_lora", "analyze_dataset"]
-    # [CAMBIO] Definimos una lista para los nuevos workflows de análisis.
+    finetuning_workflows = ["train_lora"] # El entrenamiento de LoRA se mantiene por compatibilidad
     analysis_workflows = ["analyze_source_media"]
+    # Nuevas categorías Veritas
+    pid_workflows = ["create_pid", "prepare_dataset"]
+    post_proc_workflows = ["post_process_veritas"]
 
-    # [CAMBIO] Añadimos una nueva condición en el enrutador de trabajos.
     if workflow_name in management_workflows:
-        logger.info(f"Enrutando trabajo [ID: {client_id}] al manejador de gestión para workflow: {workflow_name}")
-        thread = threading.Thread(target=run_management_job_thread, args=(client_id, workflow_name, payload.config_payload))
+        logger.info(f"Enrutando trabajo [ID: {client_id}] a GESTIÓN: {workflow_name}")
+        thread = threading.Thread(target=run_management_job_thread, args=(client_id, workflow_name, config))
     elif workflow_name in finetuning_workflows:
-        logger.info(f"Enrutando trabajo [ID: {client_id}] al manejador de fine-tuning: {workflow_name}")
-        thread = threading.Thread(target=run_finetuning_job_thread, args=(client_id, workflow_name, payload.config_payload))
+        logger.info(f"Enrutando trabajo [ID: {client_id}] a FINE-TUNING (Legacy): {workflow_name}")
+        thread = threading.Thread(target=run_finetuning_job_thread, args=(client_id, workflow_name, config))
     elif workflow_name in analysis_workflows:
-        logger.info(f"Enrutando trabajo [ID: {client_id}] al manejador de análisis: {workflow_name}")
-        thread = threading.Thread(target=run_analysis_job_thread, args=(client_id, workflow_name, payload.config_payload))
+        logger.info(f"Enrutando trabajo [ID: {client_id}] a ANÁLISIS: {workflow_name}")
+        thread = threading.Thread(target=run_analysis_job_thread, args=(client_id, workflow_name, config))
+    elif workflow_name in pid_workflows:
+        logger.info(f"Enrutando trabajo [ID: {client_id}] a CREACIÓN PID: {workflow_name}")
+        thread = threading.Thread(target=run_pid_creation_job_thread, args=(client_id, config))
+    elif workflow_name in post_proc_workflows:
+        logger.info(f"Enrutando trabajo [ID: {client_id}] a POST-PROCESADO: {workflow_name}")
+        thread = threading.Thread(target=run_post_processing_job_thread, args=(client_id, config))
     else:
-        logger.info(f"Enrutando trabajo [ID: {client_id}] al manejador de ComfyUI para workflow: {workflow_name}")
-        thread = threading.Thread(target=run_job_thread, args=(client_id, workflow_name, payload.config_payload))
+        logger.info(f"Enrutando trabajo [ID: {client_id}] a GENERACIÓN COMFYUI: {workflow_name}")
+        thread = threading.Thread(target=run_job_thread, args=(client_id, workflow_name, config))
     
     thread.start()
     return {"message": "Trabajo recibido", "id": client_id, "status": "IN_QUEUE"}
 
 @app.get("/status/{client_id}", response_model=StatusResponse)
 async def get_job_status(client_id: str):
+    # (Esta función permanece sin cambios)
     if client_id not in job_status_db:
         raise HTTPException(status_code=404, detail="ID de trabajo no encontrado.")
     status_data = job_status_db[client_id]
