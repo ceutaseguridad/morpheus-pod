@@ -372,10 +372,12 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
         "target_image_pod_path": ("LoadImage", "image"), "mask_image_pod_path": ("LoadImage", "image"),
         "target_video_pod_path": ("VHS_VideoLoader", "video"), "source_media_pod_path": ("LoadImage", "image"),
         "audio_pod_path": ("LoadAudio", "audio_file"),
-        "pid_vector_path": ("LoadEmbeds", "embeds_path"), # Corregido para apuntar a LoadEmbeds
+        "pid_vector_path": ("LoadEmbeds", "embeds_path"),
         "lens_distortion": ("ImageLensDistortion", "lens_distortion"),
         "chromatic_aberration": ("ImageLensDistortion", "chromatic_aberration"),
-        "grain_amount": ("VHS_AddGrain", "amount")
+        "grain_amount": ("VHS_AddGrain", "amount"),
+        # [VERITAS OPTIMIZATION] Nuevo mapeo para la ruta del directorio
+        "captured_frames_dir_pod_path": ("LoadImageBatch", "directory")
     }
 
     for key, value in payload.items():
@@ -389,8 +391,12 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
                     if key == 'target_image_pod_path' and "mask" in meta_title: continue
                     if key == 'mask_image_pod_path' and "mask" not in meta_title: continue
                     
+                    # [VERITAS OPTIMIZATION] La lógica ahora maneja rutas de directorio y de archivo
                     if node_class in ["LoadImage", "VHS_VideoLoader", "LoadAudio", "LoadEmbeds"]:
                         node["inputs"][input_name] = os.path.basename(value)
+                    elif node_class == "LoadImageBatch":
+                        # Para LoadImageBatch, el valor es la ruta completa del directorio
+                        node["inputs"][input_name] = value
                     else:
                         node["inputs"][input_name] = value
                     logger.info(f"Parámetro aplicado: Nodo '{node_id}' ({node_class}), Input '{input_name}' = '{value}'")
@@ -408,14 +414,13 @@ def run_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str,
         output_files = run_comfyui_generation(updated_workflow, job_dir, client_id)
         job_status_db[client_id]["progress"] = 90
         final_output = {}
-        job_type = config_payload.get("job_type", "video") # Predeterminado a video para los nuevos flujos
+        job_type = config_payload.get("job_type", "video") 
         if job_type == "image" and output_files:
             final_output["image_pod_path"] = output_files[0]
             metadata = _analyze_and_tag_image(output_files[0], config_payload)
             if metadata: final_output["metadata"] = metadata
         elif job_type == "video" and output_files:
             final_output["video_pod_path"] = output_files[0]
-            # ... (lógica de metadatos de vídeo)
         job_status_db[client_id] = {"status": "COMPLETED", "output": final_output, "error": None, "progress": 100}
     except Exception as e:
         logger.error(f"Fallo en run_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
@@ -428,22 +433,18 @@ def run_live_animation_render_job_thread(client_id: str, config_payload: Dict[st
     try:
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
         
-        frames_input_dir = f"/workspace/job_data/{client_id}/input/captured_frames"
-        os.makedirs(frames_input_dir, exist_ok=True)
-        
+        # [VERITAS OPTIMIZATION] Se elimina la copia de archivos.
+        # La ruta del directorio ya se pasa en el payload.
         source_frames_dir = config_payload.get("captured_frames_dir_pod_path")
         if not source_frames_dir or not os.path.exists(source_frames_dir):
-            raise ValueError("No se encontró el directorio de fotogramas capturados.")
-        
-        # Copiamos los fotogramas al directorio que espera el workflow
-        for frame_file in os.listdir(source_frames_dir):
-            shutil.copy(os.path.join(source_frames_dir, frame_file), frames_input_dir)
+            raise ValueError(f"No se encontró el directorio de fotogramas capturados en: {source_frames_dir}")
             
         job_status_db[client_id]["progress"] = 30
         
         workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", "live_animation_render.json")
         with open(workflow_path, 'r') as f: workflow_data = json.load(f)
         
+        # El payload ahora contiene 'captured_frames_dir_pod_path', que será mapeado por update_workflow_with_payload
         updated_workflow = update_workflow_with_payload(workflow_data, config_payload)
         output_files = run_comfyui_generation(updated_workflow, job_dir, client_id)
         
