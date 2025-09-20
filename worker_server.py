@@ -51,7 +51,10 @@ vlm_processor = None
 vlm_model = None
 fa = None # Para face-alignment
 
-MORPHEUS_AI_MODEL_ID = "ehartford/dolphin-2.2.1-mistral-7b"
+# [UPGRADE 2025] Se actualiza a un modelo más potente y reciente (Llama-3-based) 
+# para mejorar drásticamente el razonamiento, la planificación de workflows y la fiabilidad en la generación de JSON.
+MORPHEUS_AI_MODEL_ID = "NousResearch/Hermes-2-Pro-Llama-3-8B"
+
 VISUAL_MODEL_ID = "Salesforce/blip-image-captioning-base"
 
 # --- Constantes y Base de Datos en Memoria ---
@@ -148,7 +151,6 @@ class ChatResponse(BaseModel):
 
 
 def _analyze_and_tag_image(image_path: str, config_payload: Dict[str, Any]) -> Dict[str, Any]:
-    # (Esta función permanece sin cambios)
     if not all([vlm_processor, vlm_model, llm_pipeline]):
         logger.warning("Análisis visual omitido: uno o más modelos de IA no están listos.")
         return {}
@@ -188,7 +190,6 @@ def _analyze_and_tag_image(image_path: str, config_payload: Dict[str, Any]) -> D
         return {"error": "Visual analysis failed.", "details": str(e)}
 
 def _get_video_duration(video_path: str) -> float:
-    # (Esta función permanece sin cambios)
     if not VIDEO_ANALYSIS_AVAILABLE:
         logger.warning("Librería OpenCV no disponible, no se puede obtener la duración del vídeo.")
         return 0.0
@@ -212,7 +213,6 @@ def _get_video_duration(video_path: str) -> float:
         return 0.0
 
 def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) -> Dict[str, Any]:
-    # (Esta función permanece sin cambios)
     if not llm_pipeline:
         return {"response_text": "El modelo de IA de la Conciencia aún está inicializándose...", "action": "wait_for_user", "action_data": {}, "context": context}
     new_context = context.copy()
@@ -276,12 +276,10 @@ def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) 
 
 @app.post("/chat", response_model=ChatResponse)
 async def handle_chat(payload: ChatPayload):
-    # (Esta función permanece sin cambios)
     response_data = get_morpheus_response(payload.messages, payload.context)
     action_data_obj = ActionData(**response_data.get("action_data", {}))
     return ChatResponse(response_text=response_data["response_text"], action=response_data["action"], action_data=action_data_obj, context=response_data["context"])
 
-# --- Endpoints de gestión y de modelos (permanecen sin cambios) ---
 @app.get("/")
 def read_root(): return {"Morpheus Pod (Músculo y Conciencia - Veritas)": "Online"}
 @app.get("/health")
@@ -423,7 +421,6 @@ def run_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str,
         logger.error(f"Fallo en run_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
-# --- [VERITAS FIX] Nueva función de hilo para renderizado de Actuación Virtual ---
 def run_live_animation_render_job_thread(client_id: str, config_payload: Dict[str, Any]):
     """Hilo para ejecutar el workflow de renderizado de Actuación Virtual."""
     job_dir = f"/workspace/job_data/{client_id}/output"
@@ -460,9 +457,7 @@ def run_live_animation_render_job_thread(client_id: str, config_payload: Dict[st
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
 
-# --- Las demás funciones de hilo permanecen como estaban ---
 def run_management_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
-    # (sin cambios)
     try:
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
         url = config_payload.get('url'); filename = config_payload.get('filename')
@@ -473,7 +468,6 @@ def run_management_job_thread(client_id: str, workflow_type: str, config_payload
     except Exception as e: job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
 def run_analysis_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
-    # (sin cambios)
     try:
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
         source_pod_path = config_payload.get('source_media_pod_path')
@@ -483,7 +477,6 @@ def run_analysis_job_thread(client_id: str, workflow_type: str, config_payload: 
     except Exception as e: job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
 def run_pid_creation_job_thread(client_id: str, config_payload: Dict[str, Any]):
-    # (sin cambios)
     job_dir = f"/workspace/job_data/{client_id}/output"
     os.makedirs(job_dir, exist_ok=True)
     try:
@@ -504,7 +497,6 @@ def run_pid_creation_job_thread(client_id: str, config_payload: Dict[str, Any]):
     except Exception as e: job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
 def run_post_processing_job_thread(client_id: str, config_payload: Dict[str, Any]):
-    # (sin cambios)
     job_dir = f"/workspace/job_data/{client_id}/output"
     os.makedirs(job_dir, exist_ok=True)
     try:
@@ -524,7 +516,6 @@ def run_post_processing_job_thread(client_id: str, config_payload: Dict[str, Any
     except Exception as e: job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
 def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str) -> List[str]:
-    # (sin cambios)
     ws = websocket.WebSocket()
     ws.connect(f"ws://{SERVER_ADDRESS}/ws?clientId={client_id}")
     prompt_id = queue_prompt(workflow_json, client_id)['prompt_id']
@@ -551,7 +542,6 @@ def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str)
     return output_files
 
 def run_finetuning_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
-    # (sin cambios)
     try:
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 5, "output": None, "error": None, "previews": []}
         if workflow_type == "train_lora": # Simulación
@@ -577,7 +567,7 @@ async def create_job(payload: JobPayload):
     analysis_workflows = ["analyze_source_media"]
     pid_workflows = ["create_pid", "prepare_dataset"]
     post_proc_workflows = ["post_process_veritas"]
-    live_anim_workflows = ["live_animation_render"] # [VERITAS FIX] Nueva categoría
+    live_anim_workflows = ["live_animation_render"]
 
     if workflow_name in management_workflows:
         thread = threading.Thread(target=run_management_job_thread, args=(client_id, workflow_name, config))
@@ -589,7 +579,7 @@ async def create_job(payload: JobPayload):
         thread = threading.Thread(target=run_pid_creation_job_thread, args=(client_id, config))
     elif workflow_name in post_proc_workflows:
         thread = threading.Thread(target=run_post_processing_job_thread, args=(client_id, config))
-    elif workflow_name in live_anim_workflows: # [VERITAS FIX] Nuevo enrutamiento
+    elif workflow_name in live_anim_workflows:
         thread = threading.Thread(target=run_live_animation_render_job_thread, args=(client_id, config))
     else:
         thread = threading.Thread(target=run_job_thread, args=(client_id, workflow_name, config))
@@ -599,7 +589,6 @@ async def create_job(payload: JobPayload):
 
 @app.get("/status/{client_id}", response_model=StatusResponse)
 async def get_job_status(client_id: str):
-    # (sin cambios)
     if client_id not in job_status_db: raise HTTPException(status_code=404, detail="ID de trabajo no encontrado.")
     status_data = job_status_db[client_id]
     return StatusResponse(
