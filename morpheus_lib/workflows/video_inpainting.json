@@ -1,0 +1,57 @@
+{
+  "1": {
+    "inputs": {
+      "video": "__file:source_video_pod_path__",
+      "force_rate": 24,
+      "force_size": "unchanged",
+      "frame_load_cap": 0
+    },
+    "class_type": "VHS_VideoLoader",
+    "_meta": {
+      "title": "1. Cargar Vídeo Fuente"
+    }
+  },
+  "2": {
+    "inputs": {
+      "mask": "__file:mask_pod_path__",
+      "grow_mask": 2
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "2. Cargar Máscara de Inpainting"
+    }
+  },
+  "3": {
+    "inputs": {
+      "images": [
+        "1",
+        0
+      ],
+      "mask": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "ProPainter_Inpaint",
+    "_meta": {
+      "title": "3. Aplicar Inpainting a Fotogramas (ProPainter)"
+    }
+  },
+  "4": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "Morpheus_VideoInpainted_Result",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "images": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "4. Guardar Vídeo Final"
+    }
+  }
+}
