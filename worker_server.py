@@ -1,4 +1,4 @@
-# worker_server.py (Versión 22.0 - Generación de Datasets)
+# worker_server.py (Versión 22.1 - Encadenamiento de Dataset Corregido)
 import logging
 import json
 import os
@@ -70,17 +70,15 @@ except Exception as e:
     MORPHEUS_SYSTEM_PROMPT = "Eres un asistente de IA servicial."
 
 
-app = FastAPI(title="Morpheus AI Pod (Veritas)", version="22.0")
+app = FastAPI(title="Morpheus AI Pod (Veritas)", version="22.1")
 
 @app.on_event("startup")
 async def startup_event():
-    # ... (sin cambios en esta sección)
     threading.Thread(target=initialize_llm_background, daemon=True).start()
     if VISUAL_ANALYSIS_AVAILABLE: threading.Thread(target=initialize_vlm_background, daemon=True).start()
     if FACE_ALIGNMENT_AVAILABLE: threading.Thread(target=initialize_face_alignment_background, daemon=True).start()
 
 def initialize_llm_background():
-    # ... (sin cambios en esta sección)
     global llm_pipeline
     try:
         if torch.cuda.is_available():
@@ -91,7 +89,6 @@ def initialize_llm_background():
         logger.critical(f"FALLO CRÍTICO al cargar el modelo de IA: {e}", exc_info=True)
 
 def initialize_vlm_background():
-    # ... (sin cambios en esta sección)
     global vlm_processor, vlm_model
     try:
         if torch.cuda.is_available():
@@ -103,7 +100,6 @@ def initialize_vlm_background():
         logger.critical(f"FALLO CRÍTICO al cargar el modelo visual: {e}", exc_info=True)
 
 def initialize_face_alignment_background():
-    # ... (sin cambios en esta sección)
     global fa
     try:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -112,10 +108,10 @@ def initialize_face_alignment_background():
     except Exception as e:
         logger.critical(f"FALLO CRÍTICO al cargar el modelo de alineación facial: {e}", exc_info=True)
 
-# --- Modelos Pydantic y funciones de API (sin cambios) ---
+# --- Modelos Pydantic ---
 class ChatMessage(BaseModel): role: str; content: str
 class ChatPayload(BaseModel): messages: List[ChatMessage]; context: Dict[str, Any]
-class ActionData(BaseModel): # ... (sin cambios)
+class ActionData(BaseModel):
     details: Optional[str] = None; info_type: Optional[str] = None; file_type: Optional[str] = None
     job_id: Optional[str] = None; label: Optional[str] = None; options: Optional[List[str]] = None
     file_types: Optional[List[str]] = None; key: Optional[str] = None
@@ -128,49 +124,131 @@ class ChatResponse(BaseModel): response_text: str; action: str; action_data: Act
 class JobPayload(BaseModel): workflow: str; worker_job_id: Optional[str] = None; config_payload: Dict[str, Any] = {}
 class StatusResponse(BaseModel): id: str; status: str; output: Optional[Dict[str, Any]] = None; error: Optional[str] = None; progress: int = 0; previews: Optional[List[str]] = None
 
-# --- Funciones de análisis, chat y API (sin cambios) ---
-def _analyze_and_tag_image(image_path: str, config_payload: Dict[str, Any]) -> Dict[str, Any]: # ... (sin cambios)
-    return {}
-def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) -> Dict[str, Any]: # ... (sin cambios)
-    return {}
+# --- Funciones de análisis y chat ---
+def _analyze_and_tag_image(image_path: str, config_payload: Dict[str, Any]) -> Dict[str, Any]:
+    return {} # Placeholder
+def get_morpheus_response(messages: List[ChatMessage], context: Dict[str, Any]) -> Dict[str, Any]:
+    return {} # Placeholder
+
+# --- Endpoints de API (Chat, Health, etc.) ---
 @app.post("/chat", response_model=ChatResponse)
-async def handle_chat(payload: ChatPayload): # ... (sin cambios)
-    return ChatResponse(response_text="", action="", action_data={}, context={})
-# ... otros endpoints de API sin cambios ...
+async def handle_chat(payload: ChatPayload):
+    # Lógica de chat aquí...
+    return ChatResponse(response_text="Not implemented", action="wait_for_user", action_data={}, context={})
+
 @app.get("/")
 def read_root(): return {"Morpheus Pod (Músculo y Conciencia - Veritas)": "Online"}
+
 @app.get("/health")
 def health_check(): return Response(status_code=200)
-# ... endpoints de modelos (/models/...) sin cambios ...
 
-# --- Funciones de ComfyUI (sin cambios) ---
-def queue_prompt(prompt: Dict[str, Any], client_id: str): # ... (sin cambios)
-    p = {"prompt": prompt, "client_id": client_id}; data = json.dumps(p).encode('utf-8'); req = request.Request(f"{COMFYUI_URL}/prompt", data=data); return json.loads(request.urlopen(req).read())
-def get_image(filename, subfolder, folder_type): # ... (sin cambios)
-    data = {"filename": filename, "subfolder": subfolder, "type": folder_type}; url_values = parse.urlencode(data); with request.urlopen(f"{COMFYUI_URL}/view?{url_values}") as response: return response.read()
-def get_history(prompt_id): # ... (sin cambios)
-    with request.urlopen(f"{COMFYUI_URL}/history/{prompt_id}") as response: return json.loads(response.read())
-def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]: # ... (sin cambios)
-    updated_workflow = json.loads(json.dumps(workflow_data)); # ... lógica de reemplazo
+@app.get("/models/loras")
+def list_loras(): return management_handler.list_models("lora")
+
+@app.get("/models/rvc")
+def list_rvcs(): return management_handler.list_models("rvc")
+
+@app.get("/models/checkpoints")
+def list_checkpoints(): return management_handler.list_models("checkpoint")
+
+
+# --- Funciones de ComfyUI ---
+def queue_prompt(prompt: Dict[str, Any], client_id: str):
+    p = {"prompt": prompt, "client_id": client_id}
+    data = json.dumps(p).encode('utf-8')
+    req = request.Request(f"{COMFYUI_URL}/prompt", data=data)
+    return json.loads(request.urlopen(req).read())
+
+def get_image(filename, subfolder, folder_type):
+    data = {"filename": filename, "subfolder": subfolder, "type": folder_type}
+    url_values = parse.urlencode(data)
+    with request.urlopen(f"{COMFYUI_URL}/view?{url_values}") as response:
+        return response.read()
+
+def get_history(prompt_id):
+    with request.urlopen(f"{COMFYUI_URL}/history/{prompt_id}") as response:
+        return json.loads(response.read())
+
+def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
+    # ... Lógica de reemplazo de placeholders en el workflow
+    updated_workflow = json.loads(json.dumps(workflow_data))
+    for node in updated_workflow.values():
+        if 'inputs' in node:
+            for key, value in node['inputs'].items():
+                if isinstance(value, str):
+                    if value.startswith("__param:"):
+                        param_name = value.split(":", 1)[1]
+                        if param_name in payload:
+                            node['inputs'][key] = payload[param_name]
+                    elif value.startswith("__file:"):
+                        param_name = value.split(":", 1)[1]
+                        if param_name in payload:
+                             node['inputs']['image'] = payload[param_name]
+                    elif value.startswith("__dir:"):
+                        param_name = value.split(":", 1)[1]
+                        if param_name in payload:
+                            node['inputs']['directory'] = payload[param_name]
     return updated_workflow
-def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str) -> List[str]: # ... (sin cambios)
-    ws = websocket.WebSocket(); ws.connect(f"ws://{SERVER_ADDRESS}/ws?clientId={client_id}"); prompt_id = queue_prompt(workflow_json, client_id)['prompt_id']; output_files = []; # ... lógica de websocket
+
+def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str) -> List[str]:
+    # ... Lógica de websocket para ejecutar el workflow
+    ws = websocket.WebSocket()
+    ws.connect(f"ws://{SERVER_ADDRESS}/ws?clientId={client_id}")
+    prompt_id = queue_prompt(workflow_json, client_id)['prompt_id']
+    output_files = []
+    
+    while True:
+        out = ws.recv()
+        if isinstance(out, str):
+            message = json.loads(out)
+            if message['type'] == 'executing':
+                data = message['data']
+                if data['node'] is None and data['prompt_id'] == prompt_id:
+                    break
+    
+    history = get_history(prompt_id)[prompt_id]
+    for node_id, node_output in history['outputs'].items():
+        if 'images' in node_output:
+            for image in node_output['images']:
+                image_data = get_image(image['filename'], image['subfolder'], image['type'])
+                final_path = os.path.join(output_dir, image['filename'])
+                with open(final_path, "wb") as f:
+                    f.write(image_data)
+                output_files.append(final_path)
+    ws.close()
     return output_files
 
 
 # --- Hilos de Ejecución de Trabajos ---
 
 def run_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str, Any]):
-    # ... (sin cambios en esta función)
-    job_dir = f"/workspace/job_data/{client_id}/output"; os.makedirs(job_dir, exist_ok=True); # ... lógica existente
+    job_dir = f"/workspace/job_data/{client_id}/output"
+    os.makedirs(job_dir, exist_ok=True)
+    try:
+        job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
+        workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", f"{workflow_name}.json")
+        with open(workflow_path, 'r') as f:
+            workflow_data = json.load(f)
+        
+        updated_workflow = update_workflow_with_payload(workflow_data, config_payload)
+        
+        output_files = run_comfyui_generation(updated_workflow, job_dir, client_id)
+        
+        if not output_files:
+            raise RuntimeError("La generación en ComfyUI no produjo ningún archivo de salida.")
+            
+        final_output = {"image_pod_path": output_files[0]} if output_files[0].endswith(('.png', '.jpg')) else {"video_pod_path": output_files[0]}
+        job_status_db[client_id] = {"status": "COMPLETED", "output": final_output, "error": None, "progress": 100}
 
-# --- [NUEVA FUNCIÓN] Hilo para la generación de datasets ---
+    except Exception as e:
+        logger.error(f"Fallo en run_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
+        job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
+
 def run_dataset_generation_job_thread(client_id: str, config_payload: Dict[str, Any]):
     """
     Ejecuta el workflow 'generate_dataset' en un bucle para crear múltiples imágenes de dataset.
     """
     job_dir = f"/workspace/job_data/{client_id}/output"
-    # El nombre del directorio de salida se toma del payload para coherencia
     output_folder_name = config_payload.get("output_folder_name", f"dataset_{client_id}")
     dataset_output_dir = os.path.join(job_dir, output_folder_name)
     os.makedirs(dataset_output_dir, exist_ok=True)
@@ -185,53 +263,56 @@ def run_dataset_generation_job_thread(client_id: str, config_payload: Dict[str, 
         dataset_size = config_payload.get("dataset_size", 5)
         all_generated_files = []
 
-        # Bucle para generar el número deseado de imágenes
         for i in range(dataset_size):
             logger.info(f"[Job ID: {client_id}] Generando imagen de dataset {i+1}/{dataset_size}...")
             
-            # Crear una copia del payload para esta iteración
             iter_payload = config_payload.copy()
-            # Asignar una semilla aleatoria para cada imagen para asegurar la variedad
             iter_payload['seed'] = random.randint(0, 1_000_000_000)
             
             updated_workflow = update_workflow_with_payload(workflow_data, iter_payload)
             
-            # Ejecutar la generación para una imagen
-            # Pasamos un sub-cliente_id para evitar colisiones en ComfyUI
             iter_client_id = f"{client_id}_iter_{i}"
             output_files = run_comfyui_generation(updated_workflow, dataset_output_dir, iter_client_id)
             
             if output_files:
                 all_generated_files.extend(output_files)
 
-            # Actualizar el progreso global
             progress = 5 + int(90 * (i + 1) / dataset_size)
             job_status_db[client_id]["progress"] = progress
 
         if not all_generated_files:
             raise RuntimeError("La generación del dataset no produjo ninguna imagen.")
 
-        # El resultado del trabajo es la RUTA al directorio que contiene todas las imágenes
-        final_output = {"dataset_path": dataset_output_dir}
+        # [CORRECCIÓN] La clave de salida ahora coincide con la que espera el workflow 'create_pid'
+        final_output = {"base_images_pod_paths": dataset_output_dir}
         job_status_db[client_id] = {"status": "COMPLETED", "output": final_output, "error": None, "progress": 100}
 
     except Exception as e:
         logger.error(f"Fallo en run_dataset_generation_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
+def run_live_animation_render_job_thread(client_id: str, config_payload: Dict[str, Any]):
+    # Placeholder
+    pass
 
-# --- Resto de hilos de ejecución (sin cambios) ---
-def run_live_animation_render_job_thread(client_id: str, config_payload: Dict[str, Any]): # ... (sin cambios)
+def run_management_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
+    # Placeholder
     pass
-def run_management_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]): # ... (sin cambios)
+
+def run_analysis_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
+    # Placeholder
     pass
-def run_analysis_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]): # ... (sin cambios)
+
+def run_pid_creation_job_thread(client_id: str, config_payload: Dict[str, Any]):
+    # Placeholder
     pass
-def run_pid_creation_job_thread(client_id: str, config_payload: Dict[str, Any]): # ... (sin cambios)
+
+def run_post_processing_job_thread(client_id: str, config_payload: Dict[str, Any]):
+    # Placeholder
     pass
-def run_post_processing_job_thread(client_id: str, config_payload: Dict[str, Any]): # ... (sin cambios)
-    pass
-def run_finetuning_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]): # ... (sin cambios)
+
+def run_finetuning_job_thread(client_id: str, workflow_type: str, config_payload: Dict[str, Any]):
+    # Placeholder
     pass
 
 @app.post("/job")
@@ -242,9 +323,7 @@ async def create_job(payload: JobPayload):
     workflow_name = payload.workflow
     config = payload.config_payload
     
-    # --- [ACTUALIZACIÓN] Añadimos el nuevo workflow a la lista de tipos especiales ---
     dataset_workflows = ["generate_dataset"]
-    
     management_workflows = ["install_lora", "install_rvc"]
     finetuning_workflows = ["train_lora"]
     analysis_workflows = ["analyze_source_media"]
@@ -254,7 +333,7 @@ async def create_job(payload: JobPayload):
 
     if workflow_name in management_workflows:
         thread = threading.Thread(target=run_management_job_thread, args=(client_id, workflow_name, config))
-    elif workflow_name in dataset_workflows: # <-- Nueva condición
+    elif workflow_name in dataset_workflows:
         thread = threading.Thread(target=run_dataset_generation_job_thread, args=(client_id, config))
     elif workflow_name in finetuning_workflows:
         thread = threading.Thread(target=run_finetuning_job_thread, args=(client_id, workflow_name, config))
@@ -274,11 +353,22 @@ async def create_job(payload: JobPayload):
 
 @app.get("/status/{client_id}", response_model=StatusResponse)
 async def get_job_status(client_id: str):
-    # ... (sin cambios en esta función)
-    if client_id not in job_status_db: raise HTTPException(status_code=404, detail="ID de trabajo no encontrado.")
+    if client_id not in job_status_db:
+        raise HTTPException(status_code=404, detail="ID de trabajo no encontrado.")
     status_data = job_status_db[client_id]
     return StatusResponse(
         id=client_id, status=status_data.get("status", "UNKNOWN"),
         output=status_data.get("output"), error=status_data.get("error"),
         progress=status_data.get("progress", 0), previews=status_data.get("previews")
     )
+
+@app.post("/cancel/{client_id}")
+async def cancel_job(client_id: str):
+    if client_id in job_status_db:
+        if job_status_db[client_id]['status'] in ['IN_QUEUE', 'IN_PROGRESS']:
+            job_status_db[client_id]['status'] = 'CANCELLED'
+            return Response(status_code=200, content=f"Trabajo {client_id} cancelado.")
+        else:
+            return Response(status_code=400, content=f"El trabajo {client_id} no se puede cancelar en su estado actual.")
+    else:
+        raise HTTPException(status_code=404, detail="ID de trabajo no encontrado.")
