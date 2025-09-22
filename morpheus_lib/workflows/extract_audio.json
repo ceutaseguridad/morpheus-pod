@@ -1,0 +1,27 @@
+{
+  "1": {
+    "inputs": {
+      "video": "__file:source_video_pod_path__",
+      "force_rate": 0,
+      "force_size": "unchanged",
+      "frame_load_cap": 1
+    },
+    "class_type": "VHS_VideoLoader",
+    "_meta": {
+      "title": "1. Cargar Vídeo de Entrada (Audio)"
+    }
+  },
+  "2": {
+    "inputs": {
+      "filename_prefix": "ExtractedAudio",
+      "audio": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "SaveAudio",
+    "_meta": {
+      "title": "2. Guardar Pista de Audio Extraída"
+    }
+  }
+}
