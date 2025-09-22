@@ -23,6 +23,9 @@ demucs # Para separación de fuentes y limpieza de audio
 # --- [NUEVO] Módulo 2: Dependencias de Edición de Vídeo ---
 ProPainter # Para inpainting/outpainting en vídeo
 
+# --- [NUEVO] Módulo 3: Dependencias de Transcripción de Audio ---
+openai-whisper
+
 # --- [SECCIÓN DE FIJACIÓN DE VERSIONES (PINNING) PARA ESTABILIDAD] ---
 torch==2.4.1
 torchvision==0.19.1
