@@ -8,55 +8,69 @@
     },
     "class_type": "VHS_VideoLoader",
     "_meta": {
-      "title": "Cargar Vídeo Generado"
+      "title": "1. Cargar Vídeo Generado"
     }
   },
   "2": {
+    "inputs": {
+      "lut_path": "__file:lut_pod_path__",
+      "strength": 1.0,
+      "images": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "ImageApplyLUT",
+    "_meta": {
+      "title": "2. Aplicar Perfil de Color (LUT)"
+    }
+  },
+  "3": {
     "inputs": {
       "amount": "__param:grain_amount__",
       "mono": true,
       "seed": 0,
       "frames": [
-        "1",
+        "2",
         0
       ]
     },
     "class_type": "VHS_AddGrain",
     "_meta": {
-      "title": "Añadir Ruido de Sensor (Grano)"
+      "title": "3. Añadir Ruido de Sensor (Grano)"
     }
   },
-  "3": {
+  "4": {
     "inputs": {
       "lens_distortion": "__param:lens_distortion__",
       "chromatic_aberration": "__param:chromatic_aberration__",
       "blur_size": 0.2,
       "images": [
-        "2",
+        "3",
         0
       ]
     },
     "class_type": "ImageLensDistortion",
     "_meta": {
-      "title": "Simular Óptica de Lente (Smartphone)"
+      "title": "4. Simular Óptica de Lente (Smartphone)"
     }
   },
-  "4": {
+  "5": {
     "inputs": {
       "saturation": -0.05,
       "contrast": 1.05,
       "brightness": -0.02,
       "images": [
-        "3",
+        "4",
         0
       ]
     },
     "class_type": "ColorCorrect",
     "_meta": {
-      "title": "Aplicar Perfil de Color (LUT Simulado)"
+      "title": "5. Aplicar Perfil de Color (LUT Simulado)"
     }
   },
-  "5": {
+  "6": {
     "inputs": {
       "frame_rate": 24,
       "loop_count": 0,
@@ -64,13 +78,13 @@
       "format": "video/h264-mp4",
       "pix_fmt": "yuv420p",
       "images": [
-        "4",
+        "5",
         0
       ]
     },
     "class_type": "VHS_VideoCombine",
     "_meta": {
-      "title": "Guardar Vídeo Final Post-Procesado"
+      "title": "6. Guardar Vídeo Final Post-Procesado"
     }
   }
 }
