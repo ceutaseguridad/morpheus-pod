@@ -1,10 +1,12 @@
-# worker_server.py (Versión 23.0 - Quad-Core Upgrade)
+# Morphius/morpheus-pod/worker_server.py
+# worker_server.py (Versión 24.0 - Audio & Video Editing Suite)
 import logging
 import json
 import os
 import uuid
 import threading
 import torch
+import re
 from transformers import pipeline, AutoTokenizer
 from fastapi import FastAPI, Response, HTTPException
 from pydantic import BaseModel
@@ -69,7 +71,7 @@ except Exception as e:
     MORPHEUS_SYSTEM_PROMPT = "Eres un asistente de IA servicial."
 
 
-app = FastAPI(title="Morpheus AI Pod (Veritas)", version="23.0")
+app = FastAPI(title="Morpheus AI Pod (Veritas)", version="24.0")
 
 @app.on_event("startup")
 async def startup_event():
@@ -145,7 +147,7 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
                         if param_name in payload: node['inputs'][key] = payload[param_name]
                     elif value.startswith("__file:"):
                         param_name = value.split(":", 1)[1]
-                        if param_name in payload: node['inputs']['image'] = payload[param_name] # Asume que el input se llama 'image'
+                        if param_name in payload: node['inputs']['image'] = payload[param_name]
                     elif value.startswith("__dir:"):
                         param_name = value.split(":", 1)[1]
                         if param_name in payload: node['inputs']['directory'] = payload[param_name]
@@ -165,7 +167,14 @@ def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str)
                 final_path = os.path.join(output_dir, image['filename'])
                 with open(final_path, "wb") as f: f.write(image_data)
                 output_files.append(final_path)
-        if 'text' in node_output: # Para guardar salidas de texto
+        if 'audio' in node_output:
+             for audio_file in node_output['audio']:
+                # Asumiendo que get_audio es similar a get_image
+                audio_data = get_image(audio_file['filename'], audio_file['subfolder'], audio_file['type'])
+                final_path = os.path.join(output_dir, audio_file['filename'])
+                with open(final_path, "wb") as f: f.write(audio_data)
+                output_files.append(final_path)
+        if 'text' in node_output:
             for text_content in node_output['text']:
                 final_path = os.path.join(output_dir, f"{node_id}_output.txt")
                 with open(final_path, "w", encoding='utf-8') as f: f.write(text_content)
@@ -239,7 +248,6 @@ def run_management_job_thread(client_id: str, workflow_type: str, config_payload
         logger.error(f"Fallo en run_management_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
-# --- [NUEVA FUNCIÓN DE HILO] ---
 def run_rvc_training_thread(client_id: str, config_payload: Dict[str, Any]):
     job_dir = f"/workspace/job_data/{client_id}/output"; os.makedirs(job_dir, exist_ok=True);
     try:
@@ -259,7 +267,6 @@ def run_rvc_training_thread(client_id: str, config_payload: Dict[str, Any]):
         logger.error(f"Fallo en run_rvc_training_thread [Job ID: {client_id}]: {e}", exc_info=True)
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
-# --- [NUEVA FUNCIÓN DE HILO] ---
 def run_vlm_analysis_thread(client_id: str, workflow_name: str, config_payload: Dict[str, Any]):
     job_dir = f"/workspace/job_data/{client_id}/output"; os.makedirs(job_dir, exist_ok=True);
     try:
@@ -276,6 +283,44 @@ def run_vlm_analysis_thread(client_id: str, workflow_name: str, config_payload: 
         logger.error(f"Fallo en run_vlm_analysis_thread [Job ID: {client_id}]: {e}", exc_info=True)
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
+# --- [NUEVA FUNCIÓN DE HILO GENÉRICA PARA AUDIO] ---
+def run_audio_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str, Any]):
+    job_dir = f"/workspace/job_data/{client_id}/output"; os.makedirs(job_dir, exist_ok=True)
+    try:
+        job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
+        workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", f"{workflow_name}.json")
+        with open(workflow_path, 'r') as f: workflow_data = json.load(f)
+        
+        updated_workflow = update_workflow_with_payload(workflow_data, config_payload)
+        output_files = run_comfyui_generation(updated_workflow, job_dir, client_id)
+        
+        if not output_files: raise RuntimeError("El trabajo de audio no produjo un archivo de salida.")
+        
+        final_output = {"audio_pod_path": output_files[0]}
+        job_status_db[client_id] = {"status": "COMPLETED", "output": final_output, "error": None, "progress": 100}
+    except Exception as e:
+        logger.error(f"Fallo en run_audio_job_thread [Job ID: {client_id}, Workflow: {workflow_name}]: {e}", exc_info=True)
+        job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
+
+# --- [NUEVA FUNCIÓN DE HILO GENÉRICA PARA EDICIÓN DE VÍDEO] ---
+def run_video_editing_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str, Any]):
+    job_dir = f"/workspace/job_data/{client_id}/output"; os.makedirs(job_dir, exist_ok=True)
+    try:
+        job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
+        workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", f"{workflow_name}.json")
+        with open(workflow_path, 'r') as f: workflow_data = json.load(f)
+
+        updated_workflow = update_workflow_with_payload(workflow_data, config_payload)
+        output_files = run_comfyui_generation(updated_workflow, job_dir, client_id)
+
+        if not output_files: raise RuntimeError("El trabajo de edición de vídeo no produjo un archivo de salida.")
+        
+        final_output = {"video_pod_path": output_files[0]}
+        job_status_db[client_id] = {"status": "COMPLETED", "output": final_output, "error": None, "progress": 100}
+    except Exception as e:
+        logger.error(f"Fallo en run_video_editing_job_thread [Job ID: {client_id}, Workflow: {workflow_name}]: {e}", exc_info=True)
+        job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
+
 # --- Endpoint de API Principal (/job) MODIFICADO ---
 @app.post("/job")
 async def create_job(payload: JobPayload):
@@ -285,38 +330,33 @@ async def create_job(payload: JobPayload):
     
     # Mapeo de workflows a funciones de hilo
     workflow_map = {
-        "train_rvc": run_rvc_training_thread,
-        "analyze_image": run_vlm_analysis_thread,
-        "generate_dataset_from_scratch": run_dataset_generation_job_thread,
-        "generate_dataset_from_reference": run_dataset_generation_job_thread,
-        "create_pid": run_pid_creation_job_thread,
+        # Workflows existentes
+        "train_rvc": (run_rvc_training_thread, (client_id, config)),
+        "analyze_image": (run_vlm_analysis_thread, (client_id, workflow_name, config)),
+        "generate_dataset_from_scratch": (run_dataset_generation_job_thread, (client_id, workflow_name, config)),
+        "generate_dataset_from_reference": (run_dataset_generation_job_thread, (client_id, workflow_name, config)),
+        "create_pid": (run_pid_creation_job_thread, (client_id, config)),
+        "install_lora": (run_management_job_thread, (client_id, workflow_name, config)),
+        "install_rvc": (run_management_job_thread, (client_id, workflow_name, config)),
+        # [NUEVO] Workflows de Audio
+        "text_to_speech": (run_audio_job_thread, (client_id, workflow_name, config)),
+        "generate_sfx": (run_audio_job_thread, (client_id, workflow_name, config)),
+        "clean_audio": (run_audio_job_thread, (client_id, workflow_name, config)),
+        # [NUEVO] Workflows de Edición de Vídeo
+        "stitch_video": (run_video_editing_job_thread, (client_id, workflow_name, config)),
+        "video_inpainting": (run_video_editing_job_thread, (client_id, workflow_name, config)),
     }
-    management_workflows = ["install_lora", "install_rvc"]
 
-    target_func = None
-    args = ()
-    
     if workflow_name in workflow_map:
-        target_func = workflow_map[workflow_name]
-        if "dataset" in workflow_name:
-            args = (client_id, workflow_name, config)
-        else:
-            args = (client_id, config)
-    elif workflow_name in management_workflows:
-        target_func = run_management_job_thread
-        args = (client_id, workflow_name, config)
+        target_func, args = workflow_map[workflow_name]
     else:
+        # Por defecto, usar el manejador genérico para workflows de generación de imagen/vídeo
         target_func = run_job_thread
         args = (client_id, workflow_name, config)
         
-    if target_func:
-        thread = threading.Thread(target=target_func, args=args)
-        thread.start()
-        return {"message": "Trabajo recibido", "id": client_id, "status": "IN_QUEUE"}
-    else:
-        logger.error(f"No se encontró un manejador para el workflow: {workflow_name}")
-        job_status_db[client_id] = {"status": "FAILED", "error": f"Workflow desconocido: {workflow_name}"}
-        raise HTTPException(status_code=400, detail=f"Workflow no soportado: {workflow_name}")
+    thread = threading.Thread(target=target_func, args=args)
+    thread.start()
+    return {"message": "Trabajo recibido", "id": client_id, "status": "IN_QUEUE"}
 
 
 # --- Endpoints de Estado y Cancelación ---
@@ -338,12 +378,10 @@ async def handle_chat(payload: ChatPayload):
     if llm_pipeline is None:
         raise HTTPException(status_code=503, detail="El modelo de IA (LLM) no está listo. Inténtalo de nuevo en unos momentos.")
     
-    # Usar el prompt del sistema base y sobreescribirlo si viene del contexto
     system_prompt = MORPHEUS_SYSTEM_PROMPT
     if payload.context and payload.context.get('system_prompt'):
         system_prompt = payload.context['system_prompt']
 
-    # Construir el historial para el modelo
     conversation_history = [{"role": "system", "content": system_prompt}]
     conversation_history.extend([msg.dict() for msg in payload.messages])
 
@@ -352,19 +390,16 @@ async def handle_chat(payload: ChatPayload):
         outputs = llm_pipeline(conversation_history, max_new_tokens=1024, eos_token_id=terminators, do_sample=True, temperature=0.6, top_p=0.9)
         generated_text = outputs[0]["generated_text"][-1]['content']
         
-        # Extraer el bloque JSON de la respuesta
         json_match = re.search(r'\{[\s\S]*\}', generated_text)
         if json_match:
             try:
                 json_response = json.loads(json_match.group(0))
-                # Validar con el modelo Pydantic
                 response_obj = ChatResponse(**json_response)
                 return response_obj
             except (json.JSONDecodeError, Exception) as e:
                 logger.error(f"Fallo al decodificar o validar el JSON de la IA: {e}")
                 return ChatResponse(response_text=f"La IA devolvió una respuesta mal formada. Texto: {generated_text}", action="wait_for_user", action_data={})
         else:
-            # Si no hay JSON, devolver la respuesta como texto plano
             return ChatResponse(response_text=generated_text, action="wait_for_user", action_data={})
 
     except Exception as e:
