@@ -20,8 +20,8 @@
   },
   "3": {
     "inputs": {
-      "pitch_shift": 0,
-      "index_ratio": 0.5,
+      "pitch_shift": "__param:pitch_shift__",
+      "index_ratio": "__param:index_ratio__",
       "rvc_model": [
         "2",
         0
