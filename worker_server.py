@@ -296,7 +296,12 @@ def run_audio_job_thread(client_id: str, workflow_name: str, config_payload: Dic
         
         if not output_files: raise RuntimeError("El trabajo de audio no produjo un archivo de salida.")
         
-        final_output = {"audio_pod_path": output_files[0]}
+        # --- MODIFICACIÓN: Devolver la ruta del archivo de texto si es una transcripción ---
+        if workflow_name == 'transcribe_audio':
+            final_output = {"text_file_pod_path": output_files[0]}
+        else:
+            final_output = {"audio_pod_path": output_files[0]}
+
         job_status_db[client_id] = {"status": "COMPLETED", "output": final_output, "error": None, "progress": 100}
     except Exception as e:
         logger.error(f"Fallo en run_audio_job_thread [Job ID: {client_id}, Workflow: {workflow_name}]: {e}", exc_info=True)
@@ -342,6 +347,8 @@ async def create_job(payload: JobPayload):
         "text_to_speech": (run_audio_job_thread, (client_id, workflow_name, config)),
         "generate_sfx": (run_audio_job_thread, (client_id, workflow_name, config)),
         "clean_audio": (run_audio_job_thread, (client_id, workflow_name, config)),
+        "extract_audio": (run_audio_job_thread, (client_id, workflow_name, config)),
+        "transcribe_audio": (run_audio_job_thread, (client_id, workflow_name, config)),
         # [NUEVO] Workflows de Edición de Vídeo
         "stitch_video": (run_video_editing_job_thread, (client_id, workflow_name, config)),
         "video_inpainting": (run_video_editing_job_thread, (client_id, workflow_name, config)),
