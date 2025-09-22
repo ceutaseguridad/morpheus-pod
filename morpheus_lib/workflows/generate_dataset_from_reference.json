@@ -2,112 +2,51 @@
   "3": {
     "inputs": {
       "seed": "__param:seed__",
-      "steps": 35,
-      "cfg": 6.0,
+      "steps": 30,
+      "cfg": 5.0,
       "sampler_name": "dpmpp_2m_sde_gpu",
       "scheduler": "karras",
-      "denoise": 0.65,
-      "model": [
-        "4",
-        0
-      ],
-      "positive": [
-        "6",
-        0
-      ],
-      "negative": [
-        "7",
-        0
-      ],
-      "latent_image": [
-        "5",
-        0
-      ]
+      "denoise": 0.55,
+      "model": ["4", 0],
+      "positive": ["6", 0],
+      "negative": ["7", 0],
+      "latent_image": ["5", 0]
     },
     "class_type": "KSampler",
-    "_meta": {
-      "title": "KSampler (Img2Img para Variación)"
-    }
+    "_meta": { "title": "KSampler (Img2Img para Variación)" }
   },
   "4": {
-    "inputs": {
-      "ckpt_name": "sd3_medium.safetensors"
-    },
+    "inputs": { "ckpt_name": "sd3_medium.safetensors" },
     "class_type": "CheckpointLoaderSimple",
-    "_meta": {
-      "title": "Load Checkpoint (SD3)"
-    }
+    "_meta": { "title": "Load Checkpoint (SD3)" }
   },
   "5": {
-    "inputs": {
-      "pixels": [
-        "14",
-        0
-      ],
-      "vae": [
-        "4",
-        2
-      ]
-    },
+    "inputs": { "pixels": ["14", 0], "vae": ["4", 2] },
     "class_type": "VAEEncode",
-    "_meta": {
-      "title": "VAE Encode (Imagen de Referencia)"
-    }
+    "_meta": { "title": "VAE Encode (Imagen Base)" }
   },
   "6": {
-    "inputs": {
-      "text": "__param:prompt__",
-      "clip": [
-        "4",
-        1
-      ]
-    },
+    "inputs": { "text": "__param:prompt__", "clip": ["4", 1] },
     "class_type": "CLIPTextEncode",
-    "_meta": {
-      "title": "CLIP Text Encode (Prompt con Modificaciones)"
-    }
+    "_meta": { "title": "CLIP Text Encode (Prompt)" }
   },
   "7": {
-    "inputs": {
-      "text": "__param:negative_prompt__",
-      "clip": [
-        "4",
-        1
-      ]
-    },
+    "inputs": { "text": "__param:negative_prompt__", "clip": ["4", 1] },
     "class_type": "CLIPTextEncode",
-    "_meta": {
-      "title": "CLIP Text Encode (Negative)"
-    }
+    "_meta": { "title": "CLIP Text Encode (Negative)" }
   },
   "8": {
-    "inputs": {
-      "samples": [
-        "3",
-        0
-      ],
-      "vae": [
-        "4",
-        2
-      ]
-    },
+    "inputs": { "samples": ["3", 0], "vae": ["4", 2] },
     "class_type": "VAEDecode",
-    "_meta": {
-      "title": "VAE Decode"
-    }
+    "_meta": { "title": "VAE Decode" }
   },
   "9": {
     "inputs": {
       "filename_prefix": "__param:output_folder_name__",
-      "images": [
-        "8",
-        0
-      ]
+      "images": ["8", 0]
     },
     "class_type": "SaveImage",
-    "_meta": {
-      "title": "Guardar Imagen de Dataset"
-    }
+    "_meta": { "title": "Guardar Imagen de Dataset" }
   },
   "14": {
     "inputs": {
@@ -115,8 +54,6 @@
       "upload": "image"
     },
     "class_type": "LoadImage",
-    "_meta": {
-      "title": "Cargar Imagen de Referencia para Modificación"
-    }
+    "_meta": { "title": "Cargar Imagen Base para Modificación" }
   }
 }
