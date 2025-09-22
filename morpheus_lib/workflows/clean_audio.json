@@ -1,0 +1,40 @@
+{
+  "1": {
+    "inputs": {
+      "audio_file": "__file:audio_to_clean_pod_path__"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "1. Cargar Audio para Limpiar"
+    }
+  },
+  "2": {
+    "inputs": {
+      "model": "htdemucs_ft",
+      "shifts": 5,
+      "split": true,
+      "overlap": 0.5,
+      "audio": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "Demucs_Separator",
+    "_meta": {
+      "title": "2. Separar Pistas de Audio (Demucs)"
+    }
+  },
+  "3": {
+    "inputs": {
+      "filename_prefix": "Morpheus_Cleaned_Voice",
+      "audio": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "SaveAudio",
+    "_meta": {
+      "title": "3. Guardar Pista de Voz Limpia"
+    }
+  }
+}
