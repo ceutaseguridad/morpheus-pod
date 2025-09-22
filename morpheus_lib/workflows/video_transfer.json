@@ -53,7 +53,7 @@
       "cfg": 7.0,
       "sampler_name": "euler",
       "scheduler": "normal",
-      "denoise": 0.65,
+      "denoise": "__param:denoise__",
       "model": [
         "10",
         0
@@ -136,7 +136,7 @@
   },
   "10": {
     "inputs": {
-      "weight": 0.85,
+      "weight": "__param:identity_weight__",
       "weight_type": "standard",
       "start_at": 0,
       "end_at": 1,
