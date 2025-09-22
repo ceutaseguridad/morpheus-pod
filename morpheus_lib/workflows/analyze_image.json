@@ -1,0 +1,26 @@
+{
+  "1": {
+    "inputs": {
+      "image": "__file:source_image_local_path__",
+      "upload": "image"
+    },
+    "class_type": "LoadImage",
+    "_meta": { "title": "Cargar Imagen para Analizar" }
+  },
+  "2": {
+    "inputs": {
+      "question": "Proporciona una descripción visual detallada de esta imagen.",
+      "image": [ "1", 0 ]
+    },
+    "class_type": "BLIP_Analyze",
+    "_meta": { "title": "Analizar con BLIP (VLM)" }
+  },
+  "3": {
+    "inputs": {
+        "text": ["2", 0],
+        "filename_prefix": "AnalysisResult"
+    },
+    "class_type": "SaveText",
+    "_meta": { "title": "Guardar Resultado del Análisis" }
+  }
+}
