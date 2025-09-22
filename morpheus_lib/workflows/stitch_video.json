@@ -1,0 +1,16 @@
+{
+  "1": {
+    "inputs": {
+      "video_paths_json": "__param:video_paths_list__",
+      "audio_path": "__file:audio_track_pod_path__",
+      "transition_type": "fade",
+      "transition_duration": 0.5,
+      "output_format": "mp4",
+      "output_filename_prefix": "Morpheus_Stitched_Video"
+    },
+    "class_type": "FFMPEG_StitchAndAddAudio",
+    "_meta": {
+      "title": "Ensamblar Clips y Añadir Audio (FFmpeg)"
+    }
+  }
+}
