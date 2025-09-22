@@ -1,0 +1,52 @@
+{
+  "1": {
+    "inputs": {
+      "text": "__param:text_to_speak__",
+      "voice": "default"
+    },
+    "class_type": "CoquiTTS_Synthesize",
+    "_meta": {
+      "title": "1. Generar Habla Base (TTS)"
+    }
+  },
+  "2": {
+    "inputs": {
+      "rvc_model_name": "__param:actress_rvc__"
+    },
+    "class_type": "RVC_ModelLoader",
+    "_meta": {
+      "title": "2. Cargar Modelo de Voz (RVC)"
+    }
+  },
+  "3": {
+    "inputs": {
+      "pitch_shift": 0,
+      "index_ratio": 0.5,
+      "rvc_model": [
+        "2",
+        0
+      ],
+      "source_audio": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "RVC_Apply",
+    "_meta": {
+      "title": "3. Aplicar Voz de Influencer"
+    }
+  },
+  "4": {
+    "inputs": {
+      "filename_prefix": "Morpheus_TTS_Result",
+      "audio": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "SaveAudio",
+    "_meta": {
+      "title": "4. Guardar Audio Final"
+    }
+  }
+}
