@@ -1,0 +1,15 @@
+{
+    "1": {
+        "inputs": {
+            "audio_path": "__file:audio_local_path__",
+            "model_name": "__param:model_name__",
+            "save_dir": "/workspace/ComfyUI/models/rvc/",
+            "epochs": 75,
+            "gpu_id": 0
+        },
+        "class_type": "RVC_Train",
+        "_meta": {
+            "title": "Entrenar Modelo RVC"
+        }
+    }
+}
