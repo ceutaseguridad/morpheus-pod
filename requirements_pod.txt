@@ -1,4 +1,6 @@
-# Dependencias principales de Morpheus Pod
+# Morphius/morpheus-pod/requirements_pod.txt
+
+# --- Dependencias Principales de Morpheus Pod ---
 fastapi
 uvicorn[standard]
 python-multipart
@@ -13,18 +15,26 @@ protobuf
 diffusers>=0.27.0
 accelerate>=0.28.0
 
+# --- [NUEVO] Módulo 1: Dependencias de Audio Avanzado ---
+TTS # CoquiTTS para Texto-a-Voz de alta calidad
+audiocraft # Para generación de SFX y música (AudioGen)
+demucs # Para separación de fuentes y limpieza de audio
+
+# --- [NUEVO] Módulo 2: Dependencias de Edición de Vídeo ---
+ProPainter # Para inpainting/outpainting en vídeo
+
 # --- [SECCIÓN DE FIJACIÓN DE VERSIONES (PINNING) PARA ESTABILIDAD] ---
 torch==2.4.1
 torchvision==0.19.1
 torchaudio==2.4.1
 numpy==2.2.4
 
-# Dependencias que faltaban y que causaban ModuleNotFoundError.
+# --- Dependencias que faltaban y que causaban ModuleNotFoundError ---
 torchsde
 opencv-python-headless
 librosa
 
-# Paquetes esenciales de ComfyUI y nodos que ahora se instalan vía pip.
+# --- Paquetes esenciales de ComfyUI y nodos que ahora se instalan vía pip ---
 comfyui-workflow-templates
 comfyui-embedded-docs
 imageio-ffmpeg
