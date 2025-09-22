@@ -1,15 +1,19 @@
-# modelos.txt v5.0 (Veritas Prime Engines)
+# Morphius/morpheus-pod/modelos.txt
+# modelos.txt v6.0 (Veritas Audio & SFX Engines)
 # Formato: <subdirectorio_en_ComfyUI/models>,<URL_de_descarga>
 
 # --- [MOTOR UPGRADE] Checkpoint de Imagen Base ---
 checkpoints,https://huggingface.co/stabilityai/stable-diffusion-3-medium/resolve/main/sd3_medium.safetensors
 
 # --- [MOTOR UPGRADE] Modelo de Vídeo Base ---
-# Se reemplaza SVD. El nuevo modelo es un checkpoint completo, no un modelo de AnimateDiff.
 checkpoints,https://huggingface.co/Morpheus/Sora-V2-Alternative/resolve/main/sora_v2_alt_1_2.safetensors
 
 # --- [MOTOR UPGRADE] Modelo de Animación Facial ---
 wav2lip,https://huggingface.co/Morpheus/EMO-Face-Animator/resolve/main/emo_v1.pth
+
+# --- [NUEVO] Módulo de Audio ---
+# Modelo para la generación de efectos de sonido (SFX)
+audio,https://huggingface.co/facebook/audiogen-medium/resolve/main/model.pth
 
 # --- Modelo de Identidad (sigue siendo el mismo y muy eficaz) ---
 ipadapter,https://huggingface.co/h94/IP-Adapter/resolve/main/models/ip-adapter-plus-face_sdxl.bin
