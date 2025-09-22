@@ -1,0 +1,38 @@
+{
+  "1": {
+    "inputs": {
+      "audio_file": "__file:input_from_previous_step__"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "1. Cargar Audio para Transcripción"
+    }
+  },
+  "2": {
+    "inputs": {
+      "model": "base",
+      "language": "auto",
+      "audio": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "Whisper_Transcription",
+    "_meta": {
+      "title": "2. Transcribir Audio a Texto (Whisper)"
+    }
+  },
+  "3": {
+    "inputs": {
+      "text": [
+        "2",
+        0
+      ],
+      "filename_prefix": "TranscriptionResult"
+    },
+    "class_type": "SaveText",
+    "_meta": {
+      "title": "3. Guardar Resultado de la Transcripción"
+    }
+  }
+}
