@@ -1,0 +1,28 @@
+{
+  "1": {
+    "inputs": {
+      "model_name": "audiogen-medium/model.pth",
+      "prompt": "__param:prompt__",
+      "duration": 5,
+      "temperature": 1.0,
+      "cfg_scale": 3.0
+    },
+    "class_type": "AudioGen_Generate",
+    "_meta": {
+      "title": "Generar Audio desde Prompt (AudioGen)"
+    }
+  },
+  "2": {
+    "inputs": {
+      "filename_prefix": "Morpheus_SFX_Result",
+      "audio": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "SaveAudio",
+    "_meta": {
+      "title": "Guardar Efecto de Sonido"
+    }
+  }
+}
