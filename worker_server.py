@@ -1,4 +1,4 @@
-# worker_server.py (Versión 22.3 - Completo, Sin Omisiones, Lógica de Previsualización)
+# worker_server.py (Versión 23.0 - Quad-Core Upgrade)
 import logging
 import json
 import os
@@ -69,7 +69,7 @@ except Exception as e:
     MORPHEUS_SYSTEM_PROMPT = "Eres un asistente de IA servicial."
 
 
-app = FastAPI(title="Morpheus AI Pod (Veritas)", version="22.3")
+app = FastAPI(title="Morpheus AI Pod (Veritas)", version="23.0")
 
 @app.on_event("startup")
 async def startup_event():
@@ -111,6 +111,7 @@ def initialize_face_alignment_background():
 class ChatMessage(BaseModel): role: str; content: str
 class ChatPayload(BaseModel): messages: List[ChatMessage]; context: Dict[str, Any]
 class ActionData(BaseModel):
+    # Modelo unificado para diversas acciones
     details: Optional[str] = None; info_type: Optional[str] = None; file_type: Optional[str] = None
     job_id: Optional[str] = None; label: Optional[str] = None; options: Optional[List[str]] = None
     file_types: Optional[List[str]] = None; key: Optional[str] = None
@@ -119,6 +120,9 @@ class ActionData(BaseModel):
     name: Optional[str] = None; system_prompt: Optional[str] = None
     filters: Optional[Dict[str, Any]] = None; tags: Optional[List[str]] = None
     execution_plan: Optional[List[Dict[str, Any]]] = None
+    media_id: Optional[int] = None; role: Optional[str] = None
+    project_name: Optional[str] = None; prompt: Optional[str] = None; negative_prompt: Optional[str] = None
+
 class ChatResponse(BaseModel): response_text: str; action: str; action_data: ActionData; context: Optional[Dict[str, Any]]
 class JobPayload(BaseModel): workflow: str; worker_job_id: Optional[str] = None; config_payload: Dict[str, Any] = {}
 class StatusResponse(BaseModel): id: str; status: str; output: Optional[Dict[str, Any]] = None; error: Optional[str] = None; progress: int = 0; previews: Optional[List[str]] = None
@@ -141,7 +145,7 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
                         if param_name in payload: node['inputs'][key] = payload[param_name]
                     elif value.startswith("__file:"):
                         param_name = value.split(":", 1)[1]
-                        if param_name in payload: node['inputs']['image'] = payload[param_name]
+                        if param_name in payload: node['inputs']['image'] = payload[param_name] # Asume que el input se llama 'image'
                     elif value.startswith("__dir:"):
                         param_name = value.split(":", 1)[1]
                         if param_name in payload: node['inputs']['directory'] = payload[param_name]
@@ -160,6 +164,11 @@ def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str)
                 image_data = get_image(image['filename'], image['subfolder'], image['type'])
                 final_path = os.path.join(output_dir, image['filename'])
                 with open(final_path, "wb") as f: f.write(image_data)
+                output_files.append(final_path)
+        if 'text' in node_output: # Para guardar salidas de texto
+            for text_content in node_output['text']:
+                final_path = os.path.join(output_dir, f"{node_id}_output.txt")
+                with open(final_path, "w", encoding='utf-8') as f: f.write(text_content)
                 output_files.append(final_path)
     ws.close()
     return output_files
@@ -200,7 +209,6 @@ def run_dataset_generation_job_thread(client_id: str, workflow_name: str, config
             progress = 5 + int(90 * (i + 1) / dataset_size); job_status_db[client_id]["progress"] = progress
         if not all_generated_files: raise RuntimeError("La generación del dataset no produjo ninguna imagen.")
         
-        # Si es un trabajo de previsualización (1 imagen), devolvemos la ruta del archivo. Si es un lote, la del directorio.
         final_output = {"image_pod_path": all_generated_files[0]} if dataset_size == 1 else {"base_images_pod_paths": dataset_output_dir}
         job_status_db[client_id] = {"status": "COMPLETED", "output": final_output, "error": None, "progress": 100}
     except Exception as e:
@@ -230,40 +238,93 @@ def run_management_job_thread(client_id: str, workflow_type: str, config_payload
     except Exception as e:
         logger.error(f"Fallo en run_management_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
+
+# --- [NUEVA FUNCIÓN DE HILO] ---
+def run_rvc_training_thread(client_id: str, config_payload: Dict[str, Any]):
+    job_dir = f"/workspace/job_data/{client_id}/output"; os.makedirs(job_dir, exist_ok=True);
+    try:
+        job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
+        workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", "train_rvc.json")
+        with open(workflow_path, 'r') as f: workflow_data = json.load(f)
         
-# --- Endpoint de API Principal (/job) ---
+        config_payload['model_name'] = f"{config_payload['model_name']}.pth"
+
+        updated_workflow = update_workflow_with_payload(workflow_data, config_payload)
+        output_files = run_comfyui_generation(updated_workflow, job_dir, client_id)
+        if not output_files: raise RuntimeError("El entrenamiento RVC no produjo un archivo de modelo.")
+        
+        final_output = {"rvc_model_path": output_files[0]}
+        job_status_db[client_id] = {"status": "COMPLETED", "output": final_output, "error": None, "progress": 100}
+    except Exception as e:
+        logger.error(f"Fallo en run_rvc_training_thread [Job ID: {client_id}]: {e}", exc_info=True)
+        job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
+
+# --- [NUEVA FUNCIÓN DE HILO] ---
+def run_vlm_analysis_thread(client_id: str, workflow_name: str, config_payload: Dict[str, Any]):
+    job_dir = f"/workspace/job_data/{client_id}/output"; os.makedirs(job_dir, exist_ok=True);
+    try:
+        job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
+        workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", f"{workflow_name}.json")
+        with open(workflow_path, 'r') as f: workflow_data = json.load(f)
+        updated_workflow = update_workflow_with_payload(workflow_data, config_payload)
+        output_files = run_comfyui_generation(updated_workflow, job_dir, client_id)
+        if not output_files: raise RuntimeError("El análisis VLM no produjo un archivo de texto.")
+        
+        final_output = {"text_file_pod_path": output_files[0]}
+        job_status_db[client_id] = {"status": "COMPLETED", "output": final_output, "error": None, "progress": 100}
+    except Exception as e:
+        logger.error(f"Fallo en run_vlm_analysis_thread [Job ID: {client_id}]: {e}", exc_info=True)
+        job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
+
+# --- Endpoint de API Principal (/job) MODIFICADO ---
 @app.post("/job")
 async def create_job(payload: JobPayload):
     client_id = payload.worker_job_id or str(uuid.uuid4())
     job_status_db[client_id] = {"status": "IN_QUEUE", "output": None, "error": None, "progress": 0}
     workflow_name = payload.workflow; config = payload.config_payload
     
-    dataset_workflows = ["generate_dataset", "generate_dataset_from_reference"]
+    # Mapeo de workflows a funciones de hilo
+    workflow_map = {
+        "train_rvc": run_rvc_training_thread,
+        "analyze_image": run_vlm_analysis_thread,
+        "generate_dataset_from_scratch": run_dataset_generation_job_thread,
+        "generate_dataset_from_reference": run_dataset_generation_job_thread,
+        "create_pid": run_pid_creation_job_thread,
+    }
     management_workflows = ["install_lora", "install_rvc"]
-    pid_workflows = ["create_pid"]
-    
-    thread_target = run_job_thread
-    thread_args = (client_id, workflow_name, config)
 
-    if workflow_name in management_workflows:
-        thread_target = run_management_job_thread
-        thread_args = (client_id, workflow_name, config)
-    elif workflow_name in dataset_workflows:
-        thread_target = run_dataset_generation_job_thread
-        thread_args = (client_id, workflow_name, config)
-    elif workflow_name in pid_workflows:
-        thread_target = run_pid_creation_job_thread
-        thread_args = (client_id, config)
+    target_func = None
+    args = ()
     
-    thread = threading.Thread(target=thread_target, args=thread_args)
-    thread.start()
-    return {"message": "Trabajo recibido", "id": client_id, "status": "IN_QUEUE"}
+    if workflow_name in workflow_map:
+        target_func = workflow_map[workflow_name]
+        if "dataset" in workflow_name:
+            args = (client_id, workflow_name, config)
+        else:
+            args = (client_id, config)
+    elif workflow_name in management_workflows:
+        target_func = run_management_job_thread
+        args = (client_id, workflow_name, config)
+    else:
+        target_func = run_job_thread
+        args = (client_id, workflow_name, config)
+        
+    if target_func:
+        thread = threading.Thread(target=target_func, args=args)
+        thread.start()
+        return {"message": "Trabajo recibido", "id": client_id, "status": "IN_QUEUE"}
+    else:
+        logger.error(f"No se encontró un manejador para el workflow: {workflow_name}")
+        job_status_db[client_id] = {"status": "FAILED", "error": f"Workflow desconocido: {workflow_name}"}
+        raise HTTPException(status_code=400, detail=f"Workflow no soportado: {workflow_name}")
+
 
 # --- Endpoints de Estado y Cancelación ---
 @app.get("/status/{client_id}", response_model=StatusResponse)
 async def get_job_status(client_id: str):
     if client_id not in job_status_db: raise HTTPException(status_code=404, detail="ID de trabajo no encontrado.")
     status_data = job_status_db[client_id]; return StatusResponse(id=client_id, status=status_data.get("status", "UNKNOWN"), output=status_data.get("output"), error=status_data.get("error"), progress=status_data.get("progress", 0), previews=status_data.get("previews"))
+
 @app.post("/cancel/{client_id}")
 async def cancel_job(client_id: str):
     if client_id in job_status_db:
@@ -271,6 +332,43 @@ async def cancel_job(client_id: str):
         else: return Response(status_code=400, content=f"El trabajo {client_id} no se puede cancelar en su estado actual.")
     else: raise HTTPException(status_code=404, detail="ID de trabajo no encontrado.")
 
-# --- Endpoints de Chat y Gestión de Modelos (Lógica omitida para brevedad en este ejemplo, pero existiría) ---
+# --- Endpoints de Chat y Gestión de Modelos ---
 @app.post("/chat", response_model=ChatResponse)
-async def handle_chat(payload: ChatPayload): return ChatResponse(response_text="Chat no implementado en esta versión.", action="wait_for_user", action_data={}, context={})
+async def handle_chat(payload: ChatPayload):
+    if llm_pipeline is None:
+        raise HTTPException(status_code=503, detail="El modelo de IA (LLM) no está listo. Inténtalo de nuevo en unos momentos.")
+    
+    # Usar el prompt del sistema base y sobreescribirlo si viene del contexto
+    system_prompt = MORPHEUS_SYSTEM_PROMPT
+    if payload.context and payload.context.get('system_prompt'):
+        system_prompt = payload.context['system_prompt']
+
+    # Construir el historial para el modelo
+    conversation_history = [{"role": "system", "content": system_prompt}]
+    conversation_history.extend([msg.dict() for msg in payload.messages])
+
+    try:
+        terminators = [llm_pipeline.tokenizer.eos_token_id, llm_pipeline.tokenizer.convert_tokens_to_ids("<|eot_id|>")]
+        outputs = llm_pipeline(conversation_history, max_new_tokens=1024, eos_token_id=terminators, do_sample=True, temperature=0.6, top_p=0.9)
+        generated_text = outputs[0]["generated_text"][-1]['content']
+        
+        # Extraer el bloque JSON de la respuesta
+        json_match = re.search(r'\{[\s\S]*\}', generated_text)
+        if json_match:
+            try:
+                json_response = json.loads(json_match.group(0))
+                # Validar con el modelo Pydantic
+                response_obj = ChatResponse(**json_response)
+                return response_obj
+            except (json.JSONDecodeError, Exception) as e:
+                logger.error(f"Fallo al decodificar o validar el JSON de la IA: {e}")
+                return ChatResponse(response_text=f"La IA devolvió una respuesta mal formada. Texto: {generated_text}", action="wait_for_user", action_data={})
+        else:
+            # Si no hay JSON, devolver la respuesta como texto plano
+            return ChatResponse(response_text=generated_text, action="wait_for_user", action_data={})
+
+    except Exception as e:
+        logger.critical(f"Error crítico durante la generación de texto de la IA: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# (El resto de endpoints como /models/loras, etc. permanecen sin cambios)
