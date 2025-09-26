@@ -1,5 +1,5 @@
 # Morphius/morpheus-pod/worker_server.py
-# worker_server.py (Versión 25.2 - Dataset Validation)
+# worker_server.py (Versión 25.3 - Advanced Relighting)
 import logging
 import json
 import os
@@ -71,7 +71,7 @@ except Exception as e:
     MORPHEUS_SYSTEM_PROMPT = "Eres un asistente de IA servicial."
 
 
-app = FastAPI(title="Morpheus AI Pod (Veritas)", version="25.2")
+app = FastAPI(title="Morpheus AI Pod (Veritas)", version="25.3")
 
 @app.on_event("startup")
 async def startup_event():
@@ -381,17 +381,16 @@ async def create_job(payload: JobPayload):
         task_chain.append({"workflow": "extract_audio", "config_payload": base_video_payload})
         if config.get("enable_voice_clean", True):
             task_chain.append({"workflow": "clean_audio", "config_payload": {}})
-        task_chain.append({"workflow": "voice_transfer", "config_payload": {"actress_rvc": config["actress_rvc"], "pitch_shift": config["pitch_shift"], "index_ratio": config["index_ratio"]}})
-        task_chain.append({"workflow": "video_transfer", "config_payload": config}) # Pasar config completa
+        task_chain.append({"workflow": "voice_transfer", "config_payload": config})
+        task_chain.append({"workflow": "video_transfer", "config_payload": config})
         
         if config.get("enable_relighting", False):
-            task_chain.append({"workflow": "relight_video", "config_payload": config})
+            task_chain.append({"workflow": "advanced_relight", "config_payload": config})
             
         task_chain.append({"workflow": "mux_video_audio", "config_payload": {}})
 
         if config.get("enable_post_process", False) or config.get("lut_pod_path"):
-            post_proc_payload = config.copy()
-            task_chain.append({"workflow": "post_process_veritas", "config_payload": post_proc_payload})
+            task_chain.append({"workflow": "post_process_veritas", "config_payload": config})
 
         thread = threading.Thread(target=run_chained_job_thread, args=(client_id, task_chain))
         thread.start()
@@ -414,8 +413,8 @@ async def create_job(payload: JobPayload):
         "stitch_video": (run_video_editing_job_thread, (client_id, workflow_name, config)),
         "video_inpainting": (run_video_editing_job_thread, (client_id, workflow_name, config)),
         "mux_video_audio": (run_video_editing_job_thread, (client_id, workflow_name, config)),
-        "relight_video": (run_video_editing_job_thread, (client_id, workflow_name, config)),
-        "validate_dataset": (run_job_thread, (client_id, workflow_name, config)), # Nuevo
+        "advanced_relight": (run_video_editing_job_thread, (client_id, workflow_name, config)),
+        "validate_dataset": (run_job_thread, (client_id, workflow_name, config)),
     }
 
     if workflow_name in workflow_map:
