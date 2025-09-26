@@ -1,5 +1,5 @@
 # Morphius/morpheus-pod/worker_server.py
-# worker_server.py (Versión 25.4 - Hand Control Logic)
+# worker_server.py (Versión 25.5 - Clothing Consistency Logic)
 import logging
 import json
 import os
@@ -71,7 +71,7 @@ except Exception as e:
     MORPHEUS_SYSTEM_PROMPT = "Eres un asistente de IA servicial."
 
 
-app = FastAPI(title="Morpheus AI Pod (Veritas)", version="25.4")
+app = FastAPI(title="Morpheus AI Pod (Veritas)", version="25.5")
 
 @app.on_event("startup")
 async def startup_event():
@@ -383,10 +383,11 @@ async def create_job(payload: JobPayload):
             task_chain.append({"workflow": "clean_audio", "config_payload": {}})
         task_chain.append({"workflow": "voice_transfer", "config_payload": config})
         
-        # Lógica para desactivar ControlNet si no está habilitado
         video_transfer_config = config.copy()
         if not config.get("enable_hand_control", True):
             video_transfer_config["pose_control_strength"] = 0.0
+        # Pasar también la referencia de ropa
+        video_transfer_config["clothing_ref_pod_path"] = config.get("clothing_ref_pod_path")
         task_chain.append({"workflow": "video_transfer", "config_payload": video_transfer_config})
         
         if config.get("enable_relighting", False):
