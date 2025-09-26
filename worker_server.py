@@ -1,5 +1,5 @@
 # Morphius/morpheus-pod/worker_server.py
-# worker_server.py (Versión 24.0 - Audio & Video Editing Suite)
+# worker_server.py (Versión 25.0 - Unified Transform Pipeline)
 import logging
 import json
 import os
@@ -71,7 +71,7 @@ except Exception as e:
     MORPHEUS_SYSTEM_PROMPT = "Eres un asistente de IA servicial."
 
 
-app = FastAPI(title="Morpheus AI Pod (Veritas)", version="24.0")
+app = FastAPI(title="Morpheus AI Pod (Veritas)", version="25.0")
 
 @app.on_event("startup")
 async def startup_event():
@@ -169,7 +169,6 @@ def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str)
                 output_files.append(final_path)
         if 'audio' in node_output:
              for audio_file in node_output['audio']:
-                # Asumiendo que get_audio es similar a get_image
                 audio_data = get_image(audio_file['filename'], audio_file['subfolder'], audio_file['type'])
                 final_path = os.path.join(output_dir, audio_file['filename'])
                 with open(final_path, "wb") as f: f.write(audio_data)
@@ -283,7 +282,6 @@ def run_vlm_analysis_thread(client_id: str, workflow_name: str, config_payload: 
         logger.error(f"Fallo en run_vlm_analysis_thread [Job ID: {client_id}]: {e}", exc_info=True)
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
-# --- [NUEVA FUNCIÓN DE HILO GENÉRICA PARA AUDIO] ---
 def run_audio_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str, Any]):
     job_dir = f"/workspace/job_data/{client_id}/output"; os.makedirs(job_dir, exist_ok=True)
     try:
@@ -296,7 +294,6 @@ def run_audio_job_thread(client_id: str, workflow_name: str, config_payload: Dic
         
         if not output_files: raise RuntimeError("El trabajo de audio no produjo un archivo de salida.")
         
-        # --- MODIFICACIÓN: Devolver la ruta del archivo de texto si es una transcripción ---
         if workflow_name == 'transcribe_audio':
             final_output = {"text_file_pod_path": output_files[0]}
         else:
@@ -307,7 +304,6 @@ def run_audio_job_thread(client_id: str, workflow_name: str, config_payload: Dic
         logger.error(f"Fallo en run_audio_job_thread [Job ID: {client_id}, Workflow: {workflow_name}]: {e}", exc_info=True)
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
-# --- [NUEVA FUNCIÓN DE HILO GENÉRICA PARA EDICIÓN DE VÍDEO] ---
 def run_video_editing_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str, Any]):
     job_dir = f"/workspace/job_data/{client_id}/output"; os.makedirs(job_dir, exist_ok=True)
     try:
@@ -326,16 +322,100 @@ def run_video_editing_job_thread(client_id: str, workflow_name: str, config_payl
         logger.error(f"Fallo en run_video_editing_job_thread [Job ID: {client_id}, Workflow: {workflow_name}]: {e}", exc_info=True)
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
-# --- Endpoint de API Principal (/job) MODIFICADO ---
+def run_chained_job_thread(client_id: str, chained_tasks: list):
+    """
+    Ejecuta una cadena de trabajos secuencialmente, pasando la salida de uno a la entrada del siguiente.
+    """
+    job_dir = f"/workspace/job_data/{client_id}/output"; os.makedirs(job_dir, exist_ok=True)
+    previous_output = {}
+    total_tasks = len(chained_tasks)
+    
+    try:
+        job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 5, "output": None, "error": None}
+        
+        for i, task in enumerate(chained_tasks):
+            workflow_name = task['workflow']
+            config_payload = task['config_payload']
+            
+            logger.info(f"[Chained Job ID: {client_id}] Iniciando etapa {i+1}/{total_tasks}: {workflow_name}")
+            
+            # Actualizar el payload con la salida del paso anterior
+            config_payload.update(previous_output)
+            
+            workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", f"{workflow_name}.json")
+            with open(workflow_path, 'r') as f: workflow_data = json.load(f)
+            
+            updated_workflow = update_workflow_with_payload(workflow_data, config_payload)
+            
+            # Usar un ID único para cada sub-trabajo de ComfyUI
+            iter_client_id = f"{client_id}_stage_{i}"
+            output_files = run_comfyui_generation(updated_workflow, job_dir, iter_client_id)
+            
+            if not output_files: raise RuntimeError(f"La etapa '{workflow_name}' no produjo archivos de salida.")
+            
+            # Determinar la clave de salida para el siguiente paso
+            output_file = output_files[0]
+            if output_file.endswith(('.mp4', '.mov')):
+                previous_output = {'target_video_pod_path': output_file}
+            elif output_file.endswith(('.wav', '.mp3')):
+                previous_output = {'audio_pod_path': output_file}
+            else:
+                previous_output = {'image_pod_path': output_file}
+
+            # Actualizar progreso
+            progress = 5 + int(90 * (i + 1) / total_tasks)
+            job_status_db[client_id]["progress"] = progress
+
+        logger.info(f"[Chained Job ID: {client_id}] Pipeline completado. Salida final: {previous_output}")
+        job_status_db[client_id] = {"status": "COMPLETED", "output": previous_output, "error": None, "progress": 100}
+        
+    except Exception as e:
+        logger.error(f"Fallo en run_chained_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
+        job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
+
 @app.post("/job")
 async def create_job(payload: JobPayload):
     client_id = payload.worker_job_id or str(uuid.uuid4())
     job_status_db[client_id] = {"status": "IN_QUEUE", "output": None, "error": None, "progress": 0}
     workflow_name = payload.workflow; config = payload.config_payload
     
+    # --- [NUEVO] Orquestador de "full_transform" ---
+    if workflow_name == "full_transform":
+        logger.info(f"[Orquestador] Recibido trabajo 'full_transform' con ID: {client_id}")
+        
+        # 1. Construir la cadena de tareas dinámicamente
+        task_chain = []
+        
+        # Etapa de Audio
+        task_chain.append({"workflow": "extract_audio", "config_payload": {"source_video_pod_path": config["target_video_pod_path"]}})
+        if config.get("enable_voice_clean", True):
+            task_chain.append({"workflow": "clean_audio", "config_payload": {}})
+        task_chain.append({"workflow": "voice_transfer", "config_payload": {"actress_rvc": config["actress_rvc"], "pitch_shift": config["pitch_shift"], "index_ratio": config["index_ratio"]}})
+        
+        # Etapa de Vídeo
+        task_chain.append({"workflow": "video_transfer", "config_payload": {"target_video_pod_path": config["target_video_pod_path"], "pid_vector_pod_path": config["pid_vector_pod_path"], "denoise": config["denoise"], "identity_weight": config["identity_weight"], "seed": config["seed"]}})
+
+        # Etapa de Fusión (Muxing)
+        task_chain.append({"workflow": "mux_video_audio", "config_payload": {}})
+
+        # Etapa de Post-Procesado (Opcional)
+        if config.get("enable_post_process", False):
+            post_proc_payload = {
+                "lens_distortion": config.get("lens_distortion", 0.0),
+                "chromatic_abberation": config.get("chromatic_abberation", 0.0),
+                "grain_amount": config.get("grain_amount", 0.0)
+            }
+            if config.get("lut_pod_path"):
+                post_proc_payload["lut_pod_path"] = config["lut_pod_path"]
+            task_chain.append({"workflow": "post_process_veritas", "config_payload": post_proc_payload})
+
+        # 2. Lanzar el hilo del pipeline encadenado
+        thread = threading.Thread(target=run_chained_job_thread, args=(client_id, task_chain))
+        thread.start()
+        return {"message": "Pipeline de transformación total recibido y orquestado", "id": client_id, "status": "IN_QUEUE"}
+
     # Mapeo de workflows a funciones de hilo
     workflow_map = {
-        # Workflows existentes
         "train_rvc": (run_rvc_training_thread, (client_id, config)),
         "analyze_image": (run_vlm_analysis_thread, (client_id, workflow_name, config)),
         "generate_dataset_from_scratch": (run_dataset_generation_job_thread, (client_id, workflow_name, config)),
@@ -343,21 +423,20 @@ async def create_job(payload: JobPayload):
         "create_pid": (run_pid_creation_job_thread, (client_id, config)),
         "install_lora": (run_management_job_thread, (client_id, workflow_name, config)),
         "install_rvc": (run_management_job_thread, (client_id, workflow_name, config)),
-        # [NUEVO] Workflows de Audio
         "text_to_speech": (run_audio_job_thread, (client_id, workflow_name, config)),
         "generate_sfx": (run_audio_job_thread, (client_id, workflow_name, config)),
         "clean_audio": (run_audio_job_thread, (client_id, workflow_name, config)),
         "extract_audio": (run_audio_job_thread, (client_id, workflow_name, config)),
         "transcribe_audio": (run_audio_job_thread, (client_id, workflow_name, config)),
-        # [NUEVO] Workflows de Edición de Vídeo
+        "voice_transfer": (run_audio_job_thread, (client_id, workflow_name, config)),
         "stitch_video": (run_video_editing_job_thread, (client_id, workflow_name, config)),
         "video_inpainting": (run_video_editing_job_thread, (client_id, workflow_name, config)),
+        "mux_video_audio": (run_video_editing_job_thread, (client_id, workflow_name, config)),
     }
 
     if workflow_name in workflow_map:
         target_func, args = workflow_map[workflow_name]
     else:
-        # Por defecto, usar el manejador genérico para workflows de generación de imagen/vídeo
         target_func = run_job_thread
         args = (client_id, workflow_name, config)
         
@@ -366,7 +445,6 @@ async def create_job(payload: JobPayload):
     return {"message": "Trabajo recibido", "id": client_id, "status": "IN_QUEUE"}
 
 
-# --- Endpoints de Estado y Cancelación ---
 @app.get("/status/{client_id}", response_model=StatusResponse)
 async def get_job_status(client_id: str):
     if client_id not in job_status_db: raise HTTPException(status_code=404, detail="ID de trabajo no encontrado.")
@@ -379,7 +457,6 @@ async def cancel_job(client_id: str):
         else: return Response(status_code=400, content=f"El trabajo {client_id} no se puede cancelar en su estado actual.")
     else: raise HTTPException(status_code=404, detail="ID de trabajo no encontrado.")
 
-# --- Endpoints de Chat y Gestión de Modelos ---
 @app.post("/chat", response_model=ChatResponse)
 async def handle_chat(payload: ChatPayload):
     if llm_pipeline is None:
@@ -412,5 +489,3 @@ async def handle_chat(payload: ChatPayload):
     except Exception as e:
         logger.critical(f"Error crítico durante la generación de texto de la IA: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-
-# (El resto de endpoints como /models/loras, etc. permanecen sin cambios)
