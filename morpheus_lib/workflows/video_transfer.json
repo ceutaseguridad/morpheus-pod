@@ -22,28 +22,28 @@
   },
   "3": {
     "inputs": {
-      "text": "RAW photo, best quality, masterpiece, detailed hands",
+      "text": "RAW photo, best quality, masterpiece, detailed hands, consistent clothing",
       "clip": [
-        "10",
+        "18",
         1
       ]
     },
     "class_type": "CLIPTextEncode",
     "_meta": {
-      "title": "5. Prompt Positivo (con Manos)"
+      "title": "5. Prompt Positivo (Consistencia)"
     }
   },
   "4": {
     "inputs": {
-      "text": "ugly, blurry, deformed, worst quality, cartoon, anime, bad hands, missing fingers",
+      "text": "ugly, blurry, deformed, worst quality, cartoon, anime, bad hands, missing fingers, changing clothes",
       "clip": [
-        "10",
+        "18",
         1
       ]
     },
     "class_type": "CLIPTextEncode",
     "_meta": {
-      "title": "6. Prompt Negativo (con Manos)"
+      "title": "6. Prompt Negativo (Consistencia)"
     }
   },
   "5": {
@@ -81,7 +81,7 @@
     },
     "class_type": "ADE_KSampler",
     "_meta": {
-      "title": "10. KSampler con Coherencia y Control de Pose"
+      "title": "10. KSampler con Coherencia y Control"
     }
   },
   "6": {
@@ -172,7 +172,7 @@
     },
     "class_type": "IPAdapterApply",
     "_meta": {
-      "title": "4. Aplicar Identidad (PID) al Modelo"
+      "title": "4a. Aplicar Identidad Facial (PID)"
     }
   },
   "11": {
@@ -247,7 +247,7 @@
     "inputs": {
       "strength": "__param:pose_control_strength__",
       "model": [
-        "10",
+        "18",
         0
       ],
       "control_net": [
@@ -262,6 +262,50 @@
     "class_type": "ControlNetApply",
     "_meta": {
       "title": "Aplicar Control de Pose al Modelo"
+    }
+  },
+  "18": {
+    "inputs": {
+      "weight": "__param:clothing_consistency_weight__",
+      "model": [
+        "10",
+        0
+      ],
+      "clip": [
+        "10",
+        1
+      ],
+      "ipadapter": [
+        "19",
+        0
+      ],
+      "image": [
+        "20",
+        0
+      ]
+    },
+    "class_type": "IPAdapterApply",
+    "_meta": {
+      "title": "4b. Aplicar Consistencia de Ropa"
+    }
+  },
+  "19": {
+    "inputs": {
+      "model_name": "ip-adapter-plus_sd15.bin"
+    },
+    "class_type": "IPAdapterModelLoader",
+    "_meta": {
+      "title": "Cargar Modelo IP-Adapter (Estilo General)"
+    }
+  },
+  "20": {
+    "inputs": {
+      "image": "__file:clothing_ref_pod_path__",
+      "upload": "image"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Cargar Imagen de Referencia de Ropa"
     }
   }
 }
