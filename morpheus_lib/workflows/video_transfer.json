@@ -7,44 +7,30 @@
       "frame_load_cap": 0
     },
     "class_type": "VHS_VideoLoader",
-    "_meta": {
-      "title": "1. Cargar Vídeo Objetivo"
-    }
+    "_meta": { "title": "1. Load Target Video" }
   },
   "2": {
     "inputs": {
-      "ckpt_name": "sora_v2_alt_1_2.safetensors"
+      "ckpt_name": "__param:base_model__"
     },
     "class_type": "CheckpointLoaderSimple",
-    "_meta": {
-      "title": "2. Cargar Modelo Base de Vídeo"
-    }
+    "_meta": { "title": "2. Load Base Model" }
   },
   "3": {
     "inputs": {
-      "text": "RAW photo, best quality, masterpiece, detailed hands, consistent clothing",
-      "clip": [
-        "18",
-        1
-      ]
+      "text": "__param:prompt__",
+      "clip": ["18", 1]
     },
     "class_type": "CLIPTextEncode",
-    "_meta": {
-      "title": "5. Prompt Positivo (Consistencia)"
-    }
+    "_meta": { "title": "Positive Prompt" }
   },
   "4": {
     "inputs": {
-      "text": "ugly, blurry, deformed, worst quality, cartoon, anime, bad hands, missing fingers, changing clothes",
-      "clip": [
-        "18",
-        1
-      ]
+      "text": "__param:negative_prompt__",
+      "clip": ["18", 1]
     },
     "class_type": "CLIPTextEncode",
-    "_meta": {
-      "title": "6. Prompt Negativo (Consistencia)"
-    }
+    "_meta": { "title": "Negative Prompt" }
   },
   "5": {
     "inputs": {
@@ -52,260 +38,114 @@
       "steps": 25,
       "cfg": 7.0,
       "sampler_name": "euler",
-      "scheduler": "normal",
+      "scheduler": "karras",
       "denoise": "__param:denoise__",
-      "model": [
-        "17",
-        0
-      ],
-      "positive": [
-        "3",
-        0
-      ],
-      "negative": [
-        "4",
-        0
-      ],
-      "latent_image": [
-        "6",
-        0
-      ],
-      "context_options": [
-        "13",
-        0
-      ],
-      "motion_lora": [
-        "12",
-        0
-      ]
+      "model": ["17", 0],
+      "positive": ["3", 0],
+      "negative": ["4", 0],
+      "latent_image": ["6", 0]
     },
-    "class_type": "ADE_KSampler",
-    "_meta": {
-      "title": "10. KSampler con Coherencia y Control"
-    }
+    "class_type": "KSampler",
+    "_meta": { "title": "KSampler" }
   },
   "6": {
     "inputs": {
-      "grow_mask_by": 4,
-      "pixels": [
-        "1",
-        0
-      ],
-      "vae": [
-        "2",
-        2
-      ],
-      "mask": [
-        "14",
-        0
-      ]
+      "pixels": ["1", 0],
+      "vae": ["2", 2]
     },
-    "class_type": "VAEEncodeForInpainting",
-    "_meta": {
-      "title": "9. Codificar Frames a Latente (con Máscara)"
-    }
+    "class_type": "VAEEncode",
+    "_meta": { "title": "Encode Frames" }
   },
   "7": {
     "inputs": {
-      "samples": [
-        "5",
-        0
-      ],
-      "vae": [
-        "2",
-        2
-      ]
+      "samples": ["5", 0],
+      "vae": ["2", 2]
     },
     "class_type": "VAEDecode",
-    "_meta": {
-      "title": "11. Decodificar Resultado a Frames"
-    }
+    "_meta": { "title": "Decode Frames" }
   },
   "8": {
     "inputs": {
       "frame_rate": 24,
-      "loop_count": 0,
-      "filename_prefix": "Morpheus_Video_Transfer",
-      "format": "video/h264-mp4",
-      "pix_fmt": "yuv420p",
-      "images": [
-        "7",
-        0
-      ]
+      "filename_prefix": "Morpheus_VideoTransfer_Abstract",
+      "images": ["7", 0]
     },
     "class_type": "VHS_VideoCombine",
-    "_meta": {
-      "title": "12. Guardar Vídeo Final"
-    }
+    "_meta": { "title": "Save Video" }
   },
   "9": {
     "inputs": {
       "embeds_path": "__file:pid_vector_path__"
     },
     "class_type": "LoadEmbeds",
-    "_meta": {
-      "title": "8. Cargar Paquete de Identidad Digital (PID)"
-    }
+    "_meta": { "title": "Load PID" }
   },
   "10": {
     "inputs": {
       "weight": "__param:identity_weight__",
-      "weight_type": "standard",
-      "start_at": 0,
-      "end_at": 1,
-      "model": [
-        "2",
-        0
-      ],
-      "clip": [
-        "2",
-        1
-      ],
-      "ipadapter": [
-        "11",
-        0
-      ],
-      "image": [
-        "9",
-        0
-      ]
+      "model": ["2", 0],
+      "ipadapter": ["11", 0],
+      "image": ["9", 0]
     },
-    "class_type": "IPAdapterApply",
-    "_meta": {
-      "title": "4a. Aplicar Identidad Facial (PID)"
-    }
+    "class_type": "IPAdapterUnifiedLoader",
+    "_meta": { "title": "Apply Face Identity (PID)" }
   },
   "11": {
     "inputs": {
-      "model_name": "ip-adapter-plus-face_sdxl.bin"
+      "model_name": "__param:ip_adapter_face__"
     },
     "class_type": "IPAdapterModelLoader",
-    "_meta": {
-      "title": "Cargar Modelo IP-Adapter (FaceID)"
-    }
-  },
-  "12": {
-    "inputs": {
-      "model_name": "mm_sd_v15_v2.ckpt",
-      "lora_name": "None"
-    },
-    "class_type": "AnimateDiffLoader",
-    "_meta": {
-      "title": "3. Cargar Modelo de Movimiento (AnimateDiff)"
-    }
-  },
-  "13": {
-    "inputs": {
-      "context_length": 16,
-      "context_stride": 1,
-      "context_overlap": 4,
-      "context_schedule": "uniform"
-    },
-    "class_type": "ADE_UniformContextOptions",
-    "_meta": {
-      "title": "Configurar Contexto de Animación"
-    }
-  },
-  "14": {
-    "inputs": {
-      "model": "u2net",
-      "images": [
-        "1",
-        0
-      ]
-    },
-    "class_type": "ImageRemoveBackground(Rembg)",
-    "_meta": {
-      "title": "Generar Máscara de Matting Avanzado"
-    }
+    "_meta": { "title": "Load Face IPAdapter" }
   },
   "15": {
     "inputs": {
       "detect_hand": "enable",
-      "detect_body": "enable",
-      "detect_face": "enable",
-      "image": [
-        "1",
-        0
-      ]
+      "image": ["1", 0]
     },
     "class_type": "OpenPose_Preprocessor",
-    "_meta": {
-      "title": "7. Pre-procesar Pose (Cuerpo + Manos)"
-    }
+    "_meta": { "title": "Extract Pose" }
   },
   "16": {
     "inputs": {
-      "control_net_name": "control_v11p_sd15_openpose.pth"
+      "control_net_name": "__param:controlnet_pose__"
     },
     "class_type": "ControlNetLoader",
-    "_meta": {
-      "title": "Cargar Modelo ControlNet (OpenPose)"
-    }
+    "_meta": { "title": "Load Pose ControlNet" }
   },
   "17": {
     "inputs": {
       "strength": "__param:pose_control_strength__",
-      "model": [
-        "18",
-        0
-      ],
-      "control_net": [
-        "16",
-        0
-      ],
-      "image": [
-        "15",
-        0
-      ]
+      "model": ["18", 0],
+      "control_net": ["16", 0],
+      "image": ["15", 0],
+      "positive": ["3", 0],
+      "negative": ["4", 0]
     },
-    "class_type": "ControlNetApply",
-    "_meta": {
-      "title": "Aplicar Control de Pose al Modelo"
-    }
+    "class_type": "ControlNetApplyAdvanced",
+    "_meta": { "title": "Apply Pose Control" }
   },
   "18": {
     "inputs": {
       "weight": "__param:clothing_consistency_weight__",
-      "model": [
-        "10",
-        0
-      ],
-      "clip": [
-        "10",
-        1
-      ],
-      "ipadapter": [
-        "19",
-        0
-      ],
-      "image": [
-        "20",
-        0
-      ]
+      "model": ["10", 0],
+      "ipadapter": ["19", 0],
+      "image": ["20", 0]
     },
-    "class_type": "IPAdapterApply",
-    "_meta": {
-      "title": "4b. Aplicar Consistencia de Ropa"
-    }
+    "class_type": "IPAdapterUnifiedLoader",
+    "_meta": { "title": "Apply Clothing Consistency" }
   },
   "19": {
     "inputs": {
-      "model_name": "ip-adapter-plus_sd15.bin"
+      "model_name": "__param:ip_adapter_clothing__"
     },
     "class_type": "IPAdapterModelLoader",
-    "_meta": {
-      "title": "Cargar Modelo IP-Adapter (Estilo General)"
-    }
+    "_meta": { "title": "Load Clothing IPAdapter" }
   },
   "20": {
     "inputs": {
-      "image": "__file:clothing_ref_pod_path__",
-      "upload": "image"
+      "image": "__file:clothing_ref_pod_path__"
     },
     "class_type": "LoadImage",
-    "_meta": {
-      "title": "Cargar Imagen de Referencia de Ropa"
-    }
+    "_meta": { "title": "Load Clothing Reference" }
   }
 }
