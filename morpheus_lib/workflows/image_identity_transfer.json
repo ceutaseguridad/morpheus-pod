@@ -1,0 +1,168 @@
+{
+  "3": {
+    "inputs": {
+      "seed": "__param:seed__",
+      "steps": "__param:steps__",
+      "cfg": "__param:cfg_scale__",
+      "sampler_name": "dpmpp_2m_sde_gpu",
+      "scheduler": "karras",
+      "denoise": "__param:denoise__",
+      "model": [
+        "17",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler (con Identidad Aplicada)"
+    }
+  },
+  "4": {
+    "inputs": {
+      "ckpt_name": "sd3_medium.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "1. Cargar Checkpoint (SD3)"
+    }
+  },
+  "5": {
+    "inputs": {
+      "pixels": [
+        "14",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "5. Codificar Imagen de Destino a Latente"
+    }
+  },
+  "6": {
+    "inputs": {
+      "text": "__param:prompt__",
+      "clip": [
+        "4",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "6. Prompt Positivo"
+    }
+  },
+  "7": {
+    "inputs": {
+      "text": "__param:negative_prompt__",
+      "clip": [
+        "4",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "7. Prompt Negativo"
+    }
+  },
+  "8": {
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "9": {
+    "inputs": {
+      "filename_prefix": "Morpheus_ImgTransfer_Result",
+      "images": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Guardar Imagen Final"
+    }
+  },
+  "14": {
+    "inputs": {
+      "image": "__file:target_image_pod_path__",
+      "upload": "image"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "2. Cargar Imagen de Destino"
+    }
+  },
+  "15": {
+    "inputs": {
+      "embeds_path": "__file:pid_vector_path__"
+    },
+    "class_type": "LoadEmbeds",
+    "_meta": {
+      "title": "3. Cargar Paquete de Identidad Digital (PID)"
+    }
+  },
+  "16": {
+    "inputs": {
+      "model_name": "ip-adapter-plus-face_sdxl.bin"
+    },
+    "class_type": "IPAdapterModelLoader",
+    "_meta": {
+      "title": "Cargar Modelo IP-Adapter (FaceID)"
+    }
+  },
+  "17": {
+    "inputs": {
+      "weight": "__param:identity_weight__",
+      "weight_type": "standard",
+      "start_at": 0,
+      "end_at": 1,
+      "model": [
+        "4",
+        0
+      ],
+      "clip": [
+        "4",
+        1
+      ],
+      "ipadapter": [
+        "16",
+        0
+      ],
+      "image": [
+        "15",
+        0
+      ]
+    },
+    "class_type": "IPAdapterApply",
+    "_meta": {
+      "title": "4. Aplicar Identidad (PID) al Modelo"
+    }
+  }
+}
