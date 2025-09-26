@@ -1,0 +1,46 @@
+{
+  "1": {
+    "inputs": {
+      "video": "__file:video_pod_path__",
+      "force_rate": 24,
+      "force_size": "unchanged",
+      "frame_load_cap": 0
+    },
+    "class_type": "VHS_VideoLoader",
+    "_meta": {
+      "title": "1. Cargar Vídeo para Re-iluminación"
+    }
+  },
+  "2": {
+    "inputs": {
+      "saturation": "__param:saturation__",
+      "contrast": "__param:contrast__",
+      "brightness": "__param:brightness__",
+      "images": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "ColorCorrect",
+    "_meta": {
+      "title": "2. Simular Re-iluminación (Ajuste de Color)"
+    }
+  },
+  "3": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "Morpheus_Relit_Video",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "images": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "3. Guardar Vídeo Re-iluminado"
+    }
+  }
+}
