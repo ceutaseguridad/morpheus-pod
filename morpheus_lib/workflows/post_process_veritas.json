@@ -57,17 +57,16 @@
   },
   "5": {
     "inputs": {
-      "saturation": -0.05,
-      "contrast": 1.05,
-      "brightness": -0.02,
+      "strength": "__param:motion_blur_strength__",
+      "method": "Optical Flow (Simple)",
       "images": [
         "4",
         0
       ]
     },
-    "class_type": "ColorCorrect",
+    "class_type": "VHS_MotionBlur",
     "_meta": {
-      "title": "5. Aplicar Perfil de Color (LUT Simulado)"
+      "title": "5. Añadir Desenfoque de Movimiento"
     }
   },
   "6": {
