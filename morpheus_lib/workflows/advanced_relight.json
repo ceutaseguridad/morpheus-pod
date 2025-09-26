@@ -1,0 +1,121 @@
+{
+  "1": {
+    "inputs": {
+      "ckpt_name": "sora_v2_alt_1_2.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "1. Cargar Modelo Base"
+    }
+  },
+  "2": {
+    "inputs": {
+      "video": "__file:video_pod_path__"
+    },
+    "class_type": "VHS_VideoLoader",
+    "_meta": {
+      "title": "2. Cargar Vídeo Transformado"
+    }
+  },
+  "3": {
+    "inputs": {
+      "pixels": [
+        "2",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "3. Codificar Frames a Latente"
+    }
+  },
+  "4": {
+    "inputs": {
+      "text": "__param:lighting_prompt__",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "4. Codificar Prompt de Iluminación"
+    }
+  },
+  "5": {
+    "inputs": {
+      "text": "dark, shadow, low contrast, oversaturated, underexposed, overexposed"
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "5. Prompt Negativo de Iluminación"
+    }
+  },
+  "6": {
+    "inputs": {
+      "seed": 0,
+      "steps": 15,
+      "cfg": 7.0,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 0.25,
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "4",
+        0
+      ],
+      "negative": [
+        "5",
+        0
+      ],
+      "latent_image": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "6. KSampler (Re-render de Iluminación)"
+    }
+  },
+  "7": {
+    "inputs": {
+      "samples": [
+        "6",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "7. Decodificar Frames Re-iluminados"
+    }
+  },
+  "8": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "Morpheus_Relit_Video",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "images": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "8. Guardar Vídeo Final"
+    }
+  }
+}
