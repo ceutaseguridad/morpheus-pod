@@ -22,7 +22,7 @@
   },
   "3": {
     "inputs": {
-      "text": "RAW photo, best quality, masterpiece, a person",
+      "text": "RAW photo, best quality, masterpiece",
       "clip": [
         "10",
         1
@@ -86,7 +86,7 @@
   },
   "6": {
     "inputs": {
-      "grow_mask_by": 6,
+      "grow_mask_by": 4,
       "pixels": [
         "1",
         0
@@ -96,13 +96,13 @@
         2
       ],
       "mask": [
-        "15",
+        "14",
         0
       ]
     },
     "class_type": "VAEEncodeForInpainting",
     "_meta": {
-      "title": "8. Codificar Frames a Latente (con Máscara)"
+      "title": "8. Codificar Frames a Latente (con Máscara de Matting)"
     }
   },
   "7": {
@@ -208,42 +208,15 @@
   },
   "14": {
     "inputs": {
-      "model_name": "sam_vit_h_4b8939.pth"
-    },
-    "class_type": "SAMModelLoader",
-    "_meta": {
-      "title": "Cargar Modelo de Segmentación (SAM)"
-    }
-  },
-  "15": {
-    "inputs": {
-      "prompt": "person",
-      "threshold": 0.3,
-      "sam_model": [
-        "14",
-        0
-      ],
-      "grounding_dino_model": [
-        "16",
-        0
-      ],
-      "image": [
+      "model": "u2net",
+      "images": [
         "1",
         0
       ]
     },
-    "class_type": "GroundingDinoSAMSegment",
+    "class_type": "ImageRemoveBackground(Rembg)",
     "_meta": {
-      "title": "Segmentar 'persona' en los Frames"
-    }
-  },
-  "16": {
-    "inputs": {
-      "model_name": "GroundingDINO_SwinT_OGC (694MB)"
-    },
-    "class_type": "GroundingDinoModelLoader",
-    "_meta": {
-      "title": "Cargar Modelo Detector de Objetos (DINO)"
+      "title": "Generar Máscara de Matting Avanzado"
     }
   }
 }
