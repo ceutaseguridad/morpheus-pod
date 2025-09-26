@@ -1,5 +1,5 @@
 # Morphius/morpheus-pod/worker_server.py
-# worker_server.py (Versión 25.0 - Unified Transform Pipeline)
+# worker_server.py (Versión 25.1 - Relighting Stage)
 import logging
 import json
 import os
@@ -71,7 +71,7 @@ except Exception as e:
     MORPHEUS_SYSTEM_PROMPT = "Eres un asistente de IA servicial."
 
 
-app = FastAPI(title="Morpheus AI Pod (Veritas)", version="25.0")
+app = FastAPI(title="Morpheus AI Pod (Veritas)", version="25.1")
 
 @app.on_event("startup")
 async def startup_event():
@@ -113,7 +113,6 @@ def initialize_face_alignment_background():
 class ChatMessage(BaseModel): role: str; content: str
 class ChatPayload(BaseModel): messages: List[ChatMessage]; context: Dict[str, Any]
 class ActionData(BaseModel):
-    # Modelo unificado para diversas acciones
     details: Optional[str] = None; info_type: Optional[str] = None; file_type: Optional[str] = None
     job_id: Optional[str] = None; label: Optional[str] = None; options: Optional[List[str]] = None
     file_types: Optional[List[str]] = None; key: Optional[str] = None
@@ -147,7 +146,14 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
                         if param_name in payload: node['inputs'][key] = payload[param_name]
                     elif value.startswith("__file:"):
                         param_name = value.split(":", 1)[1]
-                        if param_name in payload: node['inputs']['image'] = payload[param_name]
+                        if param_name in payload:
+                            # Manejo especial para poder pasar rutas de vídeo o audio
+                            if 'video' in node['inputs']:
+                                node['inputs']['video'] = payload[param_name]
+                            elif 'audio' in node['inputs']:
+                                node['inputs']['audio'] = payload[param_name]
+                            else:
+                                node['inputs']['image'] = payload[param_name]
                     elif value.startswith("__dir:"):
                         param_name = value.split(":", 1)[1]
                         if param_name in payload: node['inputs']['directory'] = payload[param_name]
@@ -323,51 +329,40 @@ def run_video_editing_job_thread(client_id: str, workflow_name: str, config_payl
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
 def run_chained_job_thread(client_id: str, chained_tasks: list):
-    """
-    Ejecuta una cadena de trabajos secuencialmente, pasando la salida de uno a la entrada del siguiente.
-    """
     job_dir = f"/workspace/job_data/{client_id}/output"; os.makedirs(job_dir, exist_ok=True)
-    previous_output = {}
+    previous_outputs = {}
     total_tasks = len(chained_tasks)
     
     try:
-        job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 5, "output": None, "error": None}
+        job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 5, "output": None, "error": None, "previews": []}
         
         for i, task in enumerate(chained_tasks):
             workflow_name = task['workflow']
-            config_payload = task['config_payload']
+            config_payload = task.get('config_payload', {})
             
             logger.info(f"[Chained Job ID: {client_id}] Iniciando etapa {i+1}/{total_tasks}: {workflow_name}")
-            
-            # Actualizar el payload con la salida del paso anterior
-            config_payload.update(previous_output)
+            config_payload.update(previous_outputs)
             
             workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", f"{workflow_name}.json")
             with open(workflow_path, 'r') as f: workflow_data = json.load(f)
             
             updated_workflow = update_workflow_with_payload(workflow_data, config_payload)
-            
-            # Usar un ID único para cada sub-trabajo de ComfyUI
             iter_client_id = f"{client_id}_stage_{i}"
             output_files = run_comfyui_generation(updated_workflow, job_dir, iter_client_id)
             
             if not output_files: raise RuntimeError(f"La etapa '{workflow_name}' no produjo archivos de salida.")
             
-            # Determinar la clave de salida para el siguiente paso
             output_file = output_files[0]
             if output_file.endswith(('.mp4', '.mov')):
-                previous_output = {'target_video_pod_path': output_file}
+                previous_outputs['video_pod_path'] = output_file
             elif output_file.endswith(('.wav', '.mp3')):
-                previous_output = {'audio_pod_path': output_file}
-            else:
-                previous_output = {'image_pod_path': output_file}
-
-            # Actualizar progreso
+                previous_outputs['audio_pod_path'] = output_file
+            
             progress = 5 + int(90 * (i + 1) / total_tasks)
             job_status_db[client_id]["progress"] = progress
 
-        logger.info(f"[Chained Job ID: {client_id}] Pipeline completado. Salida final: {previous_output}")
-        job_status_db[client_id] = {"status": "COMPLETED", "output": previous_output, "error": None, "progress": 100}
+        logger.info(f"[Chained Job ID: {client_id}] Pipeline completado. Salida final: {previous_outputs.get('video_pod_path')}")
+        job_status_db[client_id] = {"status": "COMPLETED", "output": {"video_pod_path": previous_outputs.get('video_pod_path')}, "error": None, "progress": 100}
         
     except Exception as e:
         logger.error(f"Fallo en run_chained_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
@@ -379,42 +374,27 @@ async def create_job(payload: JobPayload):
     job_status_db[client_id] = {"status": "IN_QUEUE", "output": None, "error": None, "progress": 0}
     workflow_name = payload.workflow; config = payload.config_payload
     
-    # --- [NUEVO] Orquestador de "full_transform" ---
     if workflow_name == "full_transform":
         logger.info(f"[Orquestador] Recibido trabajo 'full_transform' con ID: {client_id}")
-        
-        # 1. Construir la cadena de tareas dinámicamente
         task_chain = []
         
-        # Etapa de Audio
-        task_chain.append({"workflow": "extract_audio", "config_payload": {"source_video_pod_path": config["target_video_pod_path"]}})
+        base_video_payload = {"target_video_pod_path": config["target_video_pod_path"]}
+        task_chain.append({"workflow": "extract_audio", "config_payload": base_video_payload})
         if config.get("enable_voice_clean", True):
             task_chain.append({"workflow": "clean_audio", "config_payload": {}})
         task_chain.append({"workflow": "voice_transfer", "config_payload": {"actress_rvc": config["actress_rvc"], "pitch_shift": config["pitch_shift"], "index_ratio": config["index_ratio"]}})
-        
-        # Etapa de Vídeo
         task_chain.append({"workflow": "video_transfer", "config_payload": {"target_video_pod_path": config["target_video_pod_path"], "pid_vector_pod_path": config["pid_vector_pod_path"], "denoise": config["denoise"], "identity_weight": config["identity_weight"], "seed": config["seed"]}})
-
-        # Etapa de Fusión (Muxing)
         task_chain.append({"workflow": "mux_video_audio", "config_payload": {}})
 
-        # Etapa de Post-Procesado (Opcional)
-        if config.get("enable_post_process", False):
-            post_proc_payload = {
-                "lens_distortion": config.get("lens_distortion", 0.0),
-                "chromatic_abberation": config.get("chromatic_abberation", 0.0),
-                "grain_amount": config.get("grain_amount", 0.0)
-            }
-            if config.get("lut_pod_path"):
-                post_proc_payload["lut_pod_path"] = config["lut_pod_path"]
+        if config.get("enable_post_process", False) or config.get("lut_pod_path"):
+            post_proc_payload = {"lens_distortion": config.get("lens_distortion", 0.0), "chromatic_aberration": config.get("chromatic_aberration", 0.0), "grain_amount": config.get("grain_amount", 0.0)}
+            if config.get("lut_pod_path"): post_proc_payload["lut_pod_path"] = config["lut_pod_path"]
             task_chain.append({"workflow": "post_process_veritas", "config_payload": post_proc_payload})
 
-        # 2. Lanzar el hilo del pipeline encadenado
         thread = threading.Thread(target=run_chained_job_thread, args=(client_id, task_chain))
         thread.start()
         return {"message": "Pipeline de transformación total recibido y orquestado", "id": client_id, "status": "IN_QUEUE"}
 
-    # Mapeo de workflows a funciones de hilo
     workflow_map = {
         "train_rvc": (run_rvc_training_thread, (client_id, config)),
         "analyze_image": (run_vlm_analysis_thread, (client_id, workflow_name, config)),
@@ -432,6 +412,7 @@ async def create_job(payload: JobPayload):
         "stitch_video": (run_video_editing_job_thread, (client_id, workflow_name, config)),
         "video_inpainting": (run_video_editing_job_thread, (client_id, workflow_name, config)),
         "mux_video_audio": (run_video_editing_job_thread, (client_id, workflow_name, config)),
+        "relight_video": (run_video_editing_job_thread, (client_id, workflow_name, config)),
     }
 
     if workflow_name in workflow_map:
