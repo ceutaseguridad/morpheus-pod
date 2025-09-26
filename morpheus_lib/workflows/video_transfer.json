@@ -8,7 +8,7 @@
     },
     "class_type": "VHS_VideoLoader",
     "_meta": {
-      "title": "Cargar Vídeo Objetivo"
+      "title": "1. Cargar Vídeo Objetivo"
     }
   },
   "2": {
@@ -17,7 +17,7 @@
     },
     "class_type": "CheckpointLoaderSimple",
     "_meta": {
-      "title": "Cargar Modelo Base de Vídeo"
+      "title": "2. Cargar Modelo Base de Vídeo"
     }
   },
   "3": {
@@ -30,7 +30,7 @@
     },
     "class_type": "CLIPTextEncode",
     "_meta": {
-      "title": "Prompt Positivo (Genérico)"
+      "title": "4. Prompt Positivo (Genérico)"
     }
   },
   "4": {
@@ -43,7 +43,7 @@
     },
     "class_type": "CLIPTextEncode",
     "_meta": {
-      "title": "Prompt Negativo (Genérico)"
+      "title": "5. Prompt Negativo (Genérico)"
     }
   },
   "5": {
@@ -69,11 +69,19 @@
       "latent_image": [
         "6",
         0
+      ],
+      "context_options": [
+        "13",
+        0
+      ],
+      "motion_lora": [
+        "12",
+        0
       ]
     },
-    "class_type": "KSampler",
+    "class_type": "ADE_KSampler",
     "_meta": {
-      "title": "KSampler (Img2Img sobre Frames)"
+      "title": "8. KSampler con Coherencia de Movimiento (AnimateDiff)"
     }
   },
   "6": {
@@ -89,7 +97,7 @@
     },
     "class_type": "VAEEncode",
     "_meta": {
-      "title": "Codificar Frames a Latente"
+      "title": "7. Codificar Frames a Latente"
     }
   },
   "7": {
@@ -105,7 +113,7 @@
     },
     "class_type": "VAEDecode",
     "_meta": {
-      "title": "Decodificar Resultado a Frames"
+      "title": "9. Decodificar Resultado a Frames"
     }
   },
   "8": {
@@ -122,7 +130,7 @@
     },
     "class_type": "VHS_VideoCombine",
     "_meta": {
-      "title": "Guardar Vídeo Final"
+      "title": "10. Guardar Vídeo Final"
     }
   },
   "9": {
@@ -131,7 +139,7 @@
     },
     "class_type": "LoadEmbeds",
     "_meta": {
-      "title": "Cargar Paquete de Identidad Digital (PID)"
+      "title": "6. Cargar Paquete de Identidad Digital (PID)"
     }
   },
   "10": {
@@ -159,7 +167,7 @@
     },
     "class_type": "IPAdapterApply",
     "_meta": {
-      "title": "Aplicar Identidad (PID) al Modelo"
+      "title": "3. Aplicar Identidad (PID) al Modelo"
     }
   },
   "11": {
@@ -169,6 +177,28 @@
     "class_type": "IPAdapterModelLoader",
     "_meta": {
       "title": "Cargar Modelo IP-Adapter (FaceID)"
+    }
+  },
+  "12": {
+    "inputs": {
+      "model_name": "mm_sd_v15_v2.ckpt",
+      "lora_name": "None"
+    },
+    "class_type": "AnimateDiffLoader",
+    "_meta": {
+      "title": "Cargar Modelo de Movimiento (AnimateDiff)"
+    }
+  },
+  "13": {
+    "inputs": {
+      "context_length": 16,
+      "context_stride": 1,
+      "context_overlap": 4,
+      "context_schedule": "uniform"
+    },
+    "class_type": "ADE_UniformContextOptions",
+    "_meta": {
+      "title": "Configurar Contexto de Animación"
     }
   }
 }
