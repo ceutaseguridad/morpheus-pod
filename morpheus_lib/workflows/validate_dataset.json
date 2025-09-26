@@ -1,0 +1,52 @@
+{
+  "1": {
+    "inputs": {
+      "directory": "__dir:base_images_pod_paths__",
+      "image_load_cap": 100
+    },
+    "class_type": "LoadImageBatch",
+    "_meta": {
+      "title": "1. Cargar Lote de Imágenes del Dataset"
+    }
+  },
+  "2": {
+    "inputs": {
+      "blur_threshold": 100,
+      "images": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "Image_Filter_Blur",
+    "_meta": {
+      "title": "2. Filtrar Imágenes Borrosas"
+    }
+  },
+  "3": {
+    "inputs": {
+      "face_detect_model": "retinaface_resnet50",
+      "confidence_threshold": 0.8,
+      "images": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "Image_Filter_FaceDetect",
+    "_meta": {
+      "title": "3. Filtrar Imágenes sin Rostro Claro"
+    }
+  },
+  "4": {
+    "inputs": {
+      "filename_prefix": "Validated_Dataset_Images",
+      "images": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "4. Guardar Imágenes Validadas"
+    }
+  }
+}
