@@ -55,7 +55,7 @@ vlm_processor = None
 vlm_model = None
 fa = None # Para face-alignment
 
-MORPHEUS_AI_MODEL_ID = "NousResearch/Hermes-2-Pro-Llama-3-8B"
+MORPHEUS_AI_MODEL_ID = "Jchack/Meta-Llama-3.1-8B-uncensored-mirror"
 VISUAL_MODEL_ID = "Salesforce/blip-image-captioning-base"
 
 # --- Constantes y Base de Datos en Memoria ---
