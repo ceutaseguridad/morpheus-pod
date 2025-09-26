@@ -1,0 +1,70 @@
+{
+  "1": {
+    "inputs": {
+      "video_paths_json": "__param:video_pod_path__",
+      "audio_path": "__file:audio_pod_path__",
+      "transition_type": "none",
+      "transition_duration": 0,
+      "output_format": "mp4",
+      "output_filename_prefix": "Morpheus_Final_Transform"
+    },
+    "class_type": "FFMPEG_StitchAndAddAudio",
+    "_meta": {
+      "title": "Fusionar Vídeo y Audio (Muxing)"
+    }
+  }
+}
+Archivo 5 de 12 (Nuevo): morpheus-pod/morpheus_lib/workflows/voice_transfer.json
+code
+JSON
+{
+  "1": {
+    "inputs": {
+      "audio_file": "__file:audio_pod_path__"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "1. Cargar Audio de Actuación Original"
+    }
+  },
+  "2": {
+    "inputs": {
+      "rvc_model_name": "__param:actress_rvc__"
+    },
+    "class_type": "RVC_ModelLoader",
+    "_meta": {
+      "title": "2. Cargar Modelo de Voz del Influencer (RVC)"
+    }
+  },
+  "3": {
+    "inputs": {
+      "pitch_shift": "__param:pitch_shift__",
+      "index_ratio": "__param:index_ratio__",
+      "rvc_model": [
+        "2",
+        0
+      ],
+      "source_audio": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "RVC_Apply",
+    "_meta": {
+      "title": "3. Aplicar Timbre de Voz (Conservando Prosodia)"
+    }
+  },
+  "4": {
+    "inputs": {
+      "filename_prefix": "Morpheus_Transferred_Voice",
+      "audio": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "SaveAudio",
+    "_meta": {
+      "title": "4. Guardar Audio con Voz Transferida"
+    }
+  }
+}
