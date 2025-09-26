@@ -26,6 +26,10 @@ ProPainter # Para inpainting/outpainting en vídeo
 # --- [NUEVO] Módulo 3: Dependencias de Transcripción de Audio ---
 openai-whisper
 
+# --- [NUEVO] Módulo 4: Dependencias de Hardware y Benchmark ---
+psutil
+pynvml
+
 # --- [SECCIÓN DE FIJACIÓN DE VERSIONES (PINNING) PARA ESTABILIDAD] ---
 torch==2.4.1
 torchvision==0.19.1
@@ -46,6 +50,6 @@ kohya_ss
 pillow
 # Para segmentación facial avanzada, detección de landmarks y animación (requiere OpenCV)
 face-alignment
-# Para el streaming de vídeo en "Modo Espejo" (Actuación Virtual)
+# Para el streaming de vídeo en "Modo Espelo" (Actuación Virtual)
 streamlit-webrtc
 av
