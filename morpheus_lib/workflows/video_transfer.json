@@ -22,7 +22,7 @@
   },
   "3": {
     "inputs": {
-      "text": "RAW photo, best quality, masterpiece",
+      "text": "RAW photo, best quality, masterpiece, detailed hands",
       "clip": [
         "10",
         1
@@ -30,12 +30,12 @@
     },
     "class_type": "CLIPTextEncode",
     "_meta": {
-      "title": "5. Prompt Positivo (Genérico)"
+      "title": "5. Prompt Positivo (con Manos)"
     }
   },
   "4": {
     "inputs": {
-      "text": "ugly, blurry, deformed, worst quality, cartoon, anime",
+      "text": "ugly, blurry, deformed, worst quality, cartoon, anime, bad hands, missing fingers",
       "clip": [
         "10",
         1
@@ -43,7 +43,7 @@
     },
     "class_type": "CLIPTextEncode",
     "_meta": {
-      "title": "6. Prompt Negativo (Genérico)"
+      "title": "6. Prompt Negativo (con Manos)"
     }
   },
   "5": {
@@ -55,7 +55,7 @@
       "scheduler": "normal",
       "denoise": "__param:denoise__",
       "model": [
-        "10",
+        "17",
         0
       ],
       "positive": [
@@ -81,7 +81,7 @@
     },
     "class_type": "ADE_KSampler",
     "_meta": {
-      "title": "9. KSampler con Coherencia (AnimateDiff)"
+      "title": "10. KSampler con Coherencia y Control de Pose"
     }
   },
   "6": {
@@ -102,7 +102,7 @@
     },
     "class_type": "VAEEncodeForInpainting",
     "_meta": {
-      "title": "8. Codificar Frames a Latente (con Máscara de Matting)"
+      "title": "9. Codificar Frames a Latente (con Máscara)"
     }
   },
   "7": {
@@ -118,7 +118,7 @@
     },
     "class_type": "VAEDecode",
     "_meta": {
-      "title": "10. Decodificar Resultado a Frames"
+      "title": "11. Decodificar Resultado a Frames"
     }
   },
   "8": {
@@ -135,7 +135,7 @@
     },
     "class_type": "VHS_VideoCombine",
     "_meta": {
-      "title": "11. Guardar Vídeo Final"
+      "title": "12. Guardar Vídeo Final"
     }
   },
   "9": {
@@ -144,7 +144,7 @@
     },
     "class_type": "LoadEmbeds",
     "_meta": {
-      "title": "7. Cargar Paquete de Identidad Digital (PID)"
+      "title": "8. Cargar Paquete de Identidad Digital (PID)"
     }
   },
   "10": {
@@ -217,6 +217,51 @@
     "class_type": "ImageRemoveBackground(Rembg)",
     "_meta": {
       "title": "Generar Máscara de Matting Avanzado"
+    }
+  },
+  "15": {
+    "inputs": {
+      "detect_hand": "enable",
+      "detect_body": "enable",
+      "detect_face": "enable",
+      "image": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "OpenPose_Preprocessor",
+    "_meta": {
+      "title": "7. Pre-procesar Pose (Cuerpo + Manos)"
+    }
+  },
+  "16": {
+    "inputs": {
+      "control_net_name": "control_v11p_sd15_openpose.pth"
+    },
+    "class_type": "ControlNetLoader",
+    "_meta": {
+      "title": "Cargar Modelo ControlNet (OpenPose)"
+    }
+  },
+  "17": {
+    "inputs": {
+      "strength": "__param:pose_control_strength__",
+      "model": [
+        "10",
+        0
+      ],
+      "control_net": [
+        "16",
+        0
+      ],
+      "image": [
+        "15",
+        0
+      ]
+    },
+    "class_type": "ControlNetApply",
+    "_meta": {
+      "title": "Aplicar Control de Pose al Modelo"
     }
   }
 }
