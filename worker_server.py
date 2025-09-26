@@ -1,5 +1,5 @@
 # Morphius/morpheus-pod/worker_server.py
-# worker_server.py (Versión 26.0 - Benchmarking & Specs Endpoint)
+# worker_server.py (Versión 26.1 - Model Package Abstraction)
 import logging
 import json
 import os
@@ -86,7 +86,7 @@ except Exception as e:
     MORPHEUS_SYSTEM_PROMPT = "Eres un asistente de IA servicial."
 
 
-app = FastAPI(title="Morpheus AI Pod (Veritas)", version="26.0")
+app = FastAPI(title="Morpheus AI Pod (Veritas)", version="26.1")
 
 @app.on_event("startup")
 async def startup_event():
@@ -202,28 +202,89 @@ def get_image(filename, subfolder, folder_type):
     data = {"filename": filename, "subfolder": subfolder, "type": folder_type}; url_values = parse.urlencode(data); with request.urlopen(f"{COMFYUI_URL}/view?{url_values}") as response: return response.read()
 def get_history(prompt_id):
     with request.urlopen(f"{COMFYUI_URL}/history/{prompt_id}") as response: return json.loads(response.read())
+
+# --- =================================================== ---
+# --- INICIO DEL CÓDIGO MODIFICADO ---
+# --- =================================================== ---
 def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    [NUEVA LÓGICA] Actualiza un workflow genérico usando un 'paquete de modelos' y el payload del trabajo.
+    """
     updated_workflow = json.loads(json.dumps(workflow_data))
-    for node in updated_workflow.values():
+    model_package_name = payload.pop("model_package_name", None)
+    
+    # 1. Cargar y aplicar el paquete de modelos si se especifica
+    if model_package_name:
+        try:
+            packages_file_path = os.path.join(os.path.dirname(__file__), 'model_packages.json')
+            with open(packages_file_path, 'r') as f:
+                all_packages = json.load(f)
+            
+            # El payload debe indicar qué tipo de workflow es para buscar en la sección correcta del JSON
+            workflow_type_key = payload.get('workflow_type', 'video_transfer') # Default a video_transfer por seguridad
+            packages_section_key = f"{workflow_type_key}_packages"
+            
+            if packages_section_key not in all_packages:
+                 raise KeyError(f"La sección '{packages_section_key}' no se encontró en model_packages.json")
+                 
+            model_params = all_packages[packages_section_key][model_package_name]
+            
+            # Combinar los parámetros del paquete con el payload principal. El payload tiene prioridad.
+            final_params = {**model_params, **payload}
+            payload = final_params
+            
+        except Exception as e:
+            logger.error(f"No se pudo cargar o aplicar el paquete de modelos '{model_package_name}': {e}", exc_info=True)
+            raise ValueError(f"Paquete de modelos no válido: {model_package_name}")
+
+    # 2. Iterar y reemplazar placeholders en el workflow
+    nodes_to_remove = []
+    links_to_remap = {} # Almacena a qué nodo debe apuntar una entrada si su fuente es eliminada
+
+    for node_id, node in updated_workflow.items():
         if 'inputs' in node:
-            for key, value in node['inputs'].items():
+            for key, value in list(node['inputs'].items()):
+                # Manejar placeholders en formato `__type:name__`
                 if isinstance(value, str):
+                    placeholder = None
                     if value.startswith("__param:"):
-                        param_name = value.split(":", 1)[1]
-                        if param_name in payload: node['inputs'][key] = payload[param_name]
+                        placeholder = value.split(":", 1)[1]
                     elif value.startswith("__file:"):
-                        param_name = value.split(":", 1)[1]
-                        if param_name in payload:
-                            if 'video' in node['inputs']:
-                                node['inputs']['video'] = payload[param_name]
-                            elif 'audio' in node['inputs']:
-                                node['inputs']['audio'] = payload[param_name]
-                            else:
-                                node['inputs']['image'] = payload[param_name]
+                        placeholder = value.split(":", 1)[1]
                     elif value.startswith("__dir:"):
-                        param_name = value.split(":", 1)[1]
-                        if param_name in payload: node['inputs']['directory'] = payload[param_name]
+                        placeholder = value.split(":", 1)[1]
+                    
+                    if placeholder and placeholder in payload:
+                        param_value = payload[placeholder]
+                        # Si el valor del payload es None, significa que el nodo y sus dependencias deben ser desactivados
+                        if param_value is None:
+                            logger.warning(f"El valor para '{placeholder}' es nulo en el paquete. El nodo {node_id} ({node.get('class_type')}) será desactivado.")
+                            nodes_to_remove.append(node_id)
+                            break
+                        else:
+                            node['inputs'][key] = param_value
+                # Manejar enlaces de entrada en formato `[node_id, output_index]`
+                elif isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
+                    source_node_id = value[0]
+                    if source_node_id in nodes_to_remove:
+                        # Si nuestro nodo de entrada va a ser eliminado, necesitamos reconectar
+                        # Asumimos una cadena simple: A -> B -> C. Si B se elimina, C ahora debe apuntar a A.
+                        source_node_of_removed = updated_workflow.get(source_node_id, {}).get('inputs', {}).get('model', [None])[0]
+                        if source_node_of_removed:
+                             logger.info(f"Remapeando entrada para el nodo {node_id}: {value} -> [{source_node_of_removed}, {value[1]}]")
+                             node['inputs'][key] = [source_node_of_removed, value[1]]
+
+
+    # 3. Eliminar los nodos marcados
+    for node_id in set(nodes_to_remove):
+        if node_id in updated_workflow:
+            del updated_workflow[node_id]
+
     return updated_workflow
+# --- =================================================== ---
+# --- FIN DEL CÓDIGO MODIFICADO ---
+# --- =================================================== ---
+
 def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str) -> List[str]:
     ws = websocket.WebSocket(); ws.connect(f"ws://{SERVER_ADDRESS}/ws?clientId={client_id}"); prompt_id = queue_prompt(workflow_json, client_id)['prompt_id']; output_files = [];
     while True:
@@ -260,7 +321,11 @@ def run_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str,
         job_status_db[client_id] = {"status": "IN_PROGRESS", "progress": 10, "output": None, "error": None}
         workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", f"{workflow_name}.json")
         with open(workflow_path, 'r') as f: workflow_data = json.load(f)
+        
+        # [MODIFICACIÓN] Añadimos el tipo de workflow al payload para la nueva función de actualización
+        config_payload["workflow_type"] = workflow_name
         updated_workflow = update_workflow_with_payload(workflow_data, config_payload)
+        
         output_files = run_comfyui_generation(updated_workflow, job_dir, client_id)
         if not output_files: raise RuntimeError("La generación no produjo archivos.")
         output_key = "video_pod_path" if output_files[0].endswith(('.mp4', '.mov')) else "image_pod_path"
@@ -287,7 +352,10 @@ def run_chained_job_thread(client_id: str, chained_tasks: list):
             workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", f"{workflow_name}.json")
             with open(workflow_path, 'r') as f: workflow_data = json.load(f)
             
+            # [MODIFICACIÓN] También se aplica aquí
+            config_payload["workflow_type"] = workflow_name
             updated_workflow = update_workflow_with_payload(workflow_data, config_payload)
+
             iter_client_id = f"{client_id}_stage_{i}"
             output_files = run_comfyui_generation(updated_workflow, job_dir, iter_client_id)
             
@@ -325,16 +393,20 @@ async def create_job(payload: JobPayload):
         logger.info(f"[Orquestador] Recibido trabajo 'full_transform' con ID: {client_id}")
         task_chain = []
         
-        base_video_payload = {"target_video_pod_path": config["target_video_pod_path"]}
+        # [MODIFICACIÓN] El payload para full_transform ahora contendrá 'model_package_name'
+        # La lógica de encadenamiento necesita pasar esta información crucial
+        base_video_payload = {
+            "target_video_pod_path": config["target_video_pod_path"],
+            "model_package_name": config.get("model_package_name") 
+        }
         task_chain.append({"workflow": "extract_audio", "config_payload": base_video_payload})
         if config.get("enable_voice_clean", True):
             task_chain.append({"workflow": "clean_audio", "config_payload": {}})
         task_chain.append({"workflow": "voice_transfer", "config_payload": config})
         
+        # El workflow 'video_transfer' es el que realmente usará el paquete
         video_transfer_config = config.copy()
-        if not config.get("enable_hand_control", True):
-            video_transfer_config["pose_control_strength"] = 0.0
-        video_transfer_config["clothing_ref_pod_path"] = config.get("clothing_ref_pod_path")
+        video_transfer_config["workflow_type"] = "video_transfer" # Clave para que el worker sepa qué sección del JSON de paquetes buscar
         task_chain.append({"workflow": "video_transfer", "config_payload": video_transfer_config})
         
         if config.get("enable_relighting", False):
