@@ -196,7 +196,6 @@ class StatusResponse(BaseModel): id: str; status: str; output: Optional[Dict[str
 class SpecsResponse(BaseModel): specs: Dict[str, Any]
 
 # --- Funciones de ComfyUI ---
-# ... (El código de las funciones de ComfyUI y los hilos de ejecución de trabajos permanece sin cambios) ...
 def queue_prompt(prompt: Dict[str, Any], client_id: str):
     p = {"prompt": prompt, "client_id": client_id}; data = json.dumps(p).encode('utf-8'); req = request.Request(f"{COMFYUI_URL}/prompt", data=data); return json.loads(request.urlopen(req).read())
 def get_image(filename, subfolder, folder_type):
@@ -254,6 +253,7 @@ def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str)
     ws.close()
     return output_files
 
+# --- Hilos de Ejecución de Trabajos ---
 def run_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str, Any]):
     job_dir = f"/workspace/job_data/{client_id}/output"; os.makedirs(job_dir, exist_ok=True);
     try:
@@ -349,8 +349,26 @@ async def create_job(payload: JobPayload):
         thread.start()
         return {"message": "Pipeline de transformación total recibido y orquestado", "id": client_id, "status": "IN_QUEUE"}
 
-    # El resto del manejador de trabajos permanece igual
-    workflow_map = { "train_rvc": (run_job_thread, (client_id, "train_rvc", config)), } # Placeholder for brevity
+    workflow_map = {
+        "train_rvc": (run_rvc_training_thread, (client_id, config)),
+        "analyze_image": (run_vlm_analysis_thread, (client_id, workflow_name, config)),
+        "generate_dataset_from_scratch": (run_dataset_generation_job_thread, (client_id, workflow_name, config)),
+        "generate_dataset_from_reference": (run_dataset_generation_job_thread, (client_id, workflow_name, config)),
+        "create_pid": (run_pid_creation_job_thread, (client_id, config)),
+        "install_lora": (run_management_job_thread, (client_id, workflow_name, config)),
+        "install_rvc": (run_management_job_thread, (client_id, workflow_name, config)),
+        "text_to_speech": (run_audio_job_thread, (client_id, workflow_name, config)),
+        "generate_sfx": (run_audio_job_thread, (client_id, workflow_name, config)),
+        "clean_audio": (run_audio_job_thread, (client_id, workflow_name, config)),
+        "extract_audio": (run_audio_job_thread, (client_id, workflow_name, config)),
+        "transcribe_audio": (run_audio_job_thread, (client_id, workflow_name, config)),
+        "voice_transfer": (run_audio_job_thread, (client_id, workflow_name, config)),
+        "stitch_video": (run_video_editing_job_thread, (client_id, workflow_name, config)),
+        "video_inpainting": (run_video_editing_job_thread, (client_id, workflow_name, config)),
+        "mux_video_audio": (run_video_editing_job_thread, (client_id, workflow_name, config)),
+        "advanced_relight": (run_video_editing_job_thread, (client_id, workflow_name, config)),
+        "validate_dataset": (run_job_thread, (client_id, workflow_name, config)),
+    }
     
     if workflow_name in workflow_map:
         target_func, args = workflow_map[workflow_name]
@@ -377,7 +395,6 @@ async def cancel_job(client_id: str):
 
 @app.post("/chat", response_model=ChatResponse)
 async def handle_chat(payload: ChatPayload):
-    # ... (El código del chat permanece sin cambios) ...
     if llm_pipeline is None:
         raise HTTPException(status_code=503, detail="El modelo de IA (LLM) no está listo. Inténtalo de nuevo en unos momentos.")
     
