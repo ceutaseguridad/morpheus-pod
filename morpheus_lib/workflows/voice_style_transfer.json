@@ -1,0 +1,50 @@
+{
+  "1": {
+    "inputs": {
+      "audio_file": "__file:audio_pod_path__"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "1. Cargar Audio de Actuación Original"
+    }
+  },
+  "2": {
+    "inputs": {
+      "model_name": "vocos_emilia.safetensors",
+      "model_dir": "voice_models"
+    },
+    "class_type": "LoadVoiceModel",
+    "_meta": {
+      "title": "2. Cargar Modelo de Timbre de Voz (Amphion/DualCodec)"
+    }
+  },
+  "3": {
+    "inputs": {
+      "voice_model": [
+        "2",
+        0
+      ],
+      "source_audio": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "Amphion_VoiceStyleTransfer",
+    "_meta": {
+      "title": "3. Aplicar Timbre de Voz conservando la Prosodia/Actuación"
+    }
+  },
+  "4": {
+    "inputs": {
+      "filename_prefix": "Morpheus_Transferred_Voice",
+      "audio": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "SaveAudio",
+    "_meta": {
+      "title": "4. Guardar Audio con Voz Transferida"
+    }
+  }
+}
