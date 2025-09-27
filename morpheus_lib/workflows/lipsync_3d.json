@@ -1,0 +1,55 @@
+{
+  "1": {
+    "inputs": {
+      "embeds_path": "__file:pid_vector_path__"
+    },
+    "class_type": "LoadEmbeds",
+    "_meta": { "title": "1. Cargar PID del Influencer" }
+  },
+  "2": {
+    "inputs": {
+      "pid_embeds": ["1", 0]
+    },
+    "class_type": "Generate_NeuralHeadModel",
+    "_meta": { "title": "2. Generar Modelo de Cabeza 3D Fotorrealista" }
+  },
+  "3": {
+    "inputs": {
+      "audio_file": "__file:audio_pod_path__"
+    },
+    "class_type": "LoadAudio",
+    "_meta": { "title": "3. Cargar Audio Conductor" }
+  },
+  "4": {
+    "inputs": {
+      "head_model_3d": ["2", 0],
+      "driving_audio": ["3", 0],
+      "a2f_encoder": "A2F_Encoder.ts",
+      "a2f_decoder": "A2F_Decoder.ts",
+      "a2f_post_processor": "A2F_Post_Processor.ts"
+    },
+    "class_type": "Audio2Face_AnimateModel",
+    "_meta": { "title": "4. Animar Modelo 3D con Audio (NVIDIA A2F)" }
+  },
+  "5": {
+    "inputs": {
+      "animated_model_3d": ["4", 0],
+      "width": 1024,
+      "height": 1024,
+      "camera_angle": "frontal"
+    },
+    "class_type": "Render_3DModel_to_Frames",
+    "_meta": { "title": "5. Renderizar Animación 3D a Fotogramas 2D" }
+  },
+  "6": {
+    "inputs": {
+      "frame_rate": 25,
+      "loop_count": 0,
+      "filename_prefix": "Morpheus_LipSync_3D_Libertatem",
+      "format": "video/h264-mp4",
+      "images": ["5", 0]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": { "title": "6. Guardar Vídeo Animado Final" }
+  }
+}
