@@ -1,9 +1,10 @@
-# file_server.py (Versión 2.0 - Soporte para Subdirectorios)
+# file_server.py (Versión 2.1 - Specific File Download)
 from flask import Flask, request, jsonify, send_from_directory
 import os
 import uuid
 import shutil
 import logging
+from werkzeug.utils import secure_filename
 
 # --- Configuración del Logging ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(module)s - %(funcName)s - %(message)s')
@@ -12,13 +13,10 @@ logger = logging.getLogger(__name__)
 # --- Configuración ---
 app = Flask(__name__)
 # Directorio base para almacenar todos los archivos de los trabajos.
-# Es crucial que esté en /workspace para ser persistente.
 BASE_DIR = "/workspace/job_data"
 
 # Asegurarse de que el directorio base exista al iniciar la aplicación.
-# Esto es vital para que Gunicorn funcione correctamente.
 os.makedirs(BASE_DIR, exist_ok=True)
-
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -30,8 +28,6 @@ def health_check():
 def upload_file():
     """
     Maneja la subida de archivos. Asocia el archivo con un ID de trabajo.
-    Si no se proporciona un ID, crea uno nuevo.
-    [NUEVO] Acepta un parámetro 'sub_dir' para organizar los archivos de entrada.
     """
     logger.info("Endpoint /upload llamado.")
     if 'file' not in request.files:
@@ -44,13 +40,15 @@ def upload_file():
         return jsonify({"error": "No se seleccionó ningún archivo"}), 400
 
     worker_job_id = request.form.get('worker_job_id') or str(uuid.uuid4())
-    sub_dir = request.form.get('sub_dir') # Leer el nuevo parámetro opcional
+    sub_dir = request.form.get('sub_dir')
     
-    logger.info(f"Recibida solicitud de subida para job_id: {worker_job_id}, filename: {file.filename}, sub_dir: {sub_dir}")
+    # [SEGURIDAD] Usar secure_filename para evitar nombres de archivo maliciosos.
+    safe_filename = secure_filename(file.filename)
+    
+    logger.info(f"Recibida solicitud de subida para job_id: {worker_job_id}, filename: {safe_filename}, sub_dir: {sub_dir}")
 
     job_input_dir = os.path.join(BASE_DIR, worker_job_id, "input")
     
-    # Si se especifica un subdirectorio, se añade a la ruta
     if sub_dir:
         # Sanear el nombre del subdirectorio para evitar ataques de path traversal
         safe_sub_dir = "".join(c for c in sub_dir if c.isalnum() or c in ('_', '-')).rstrip()
@@ -60,44 +58,51 @@ def upload_file():
 
     os.makedirs(final_dir, exist_ok=True)
 
-    save_path = os.path.join(final_dir, file.filename)
+    save_path = os.path.join(final_dir, safe_filename)
     try:
         file.save(save_path)
-        logger.info(f"Archivo '{file.filename}' subido con éxito para el Job [ID: {worker_job_id}] a '{save_path}'")
+        logger.info(f"Archivo '{safe_filename}' subido con éxito para el Job [ID: {worker_job_id}] a '{save_path}'")
         return jsonify({
             "message": "Archivo subido con éxito",
             "pod_path": save_path,
             "worker_job_id": worker_job_id
         }), 200
     except Exception as e:
-        logger.error(f"Error al guardar el archivo '{file.filename}' para el Job [ID: {worker_job_id}]: {e}", exc_info=True)
+        logger.error(f"Error al guardar el archivo '{safe_filename}' para el Job [ID: {worker_job_id}]: {e}", exc_info=True)
         return jsonify({"error": f"Error al guardar el archivo: {str(e)}"}), 500
 
-@app.route('/download/<worker_job_id>', methods=['GET'])
-def download_file(worker_job_id):
+# --- [CORRECCIÓN: ENDPOINT DE DESCARGA ACTUALIZADO] ---
+# La ruta ahora acepta un nombre de archivo específico.
+# Se usa <path:filename> para permitir nombres de archivo que contienen puntos.
+@app.route('/download/<worker_job_id>/<path:filename>', methods=['GET'])
+def download_file(worker_job_id, filename):
     """
-    Descarga el archivo de resultado de un trabajo.
-    Asume que cada trabajo tiene un directorio con al menos un archivo.
+    Descarga un archivo de resultado específico de un trabajo.
     """
-    logger.info(f"Endpoint /download/{worker_job_id} llamado.")
-    job_output_dir = os.path.join(BASE_DIR, worker_job_id, "output")
+    logger.info(f"Endpoint /download/{worker_job_id}/{filename} llamado.")
+    
+    # [SEGURIDAD] Sanear el ID del trabajo y el nombre del archivo para evitar path traversal.
+    safe_worker_job_id = secure_filename(worker_job_id)
+    safe_filename = secure_filename(filename)
+
+    job_output_dir = os.path.join(BASE_DIR, safe_worker_job_id, "output")
 
     if not os.path.exists(job_output_dir):
-        logger.warning(f"No se encontró el directorio de salida para el job ID: {worker_job_id}")
+        logger.warning(f"No se encontró el directorio de salida para el job ID: {safe_worker_job_id}")
         return jsonify({"error": "No se encontró el directorio de salida para este trabajo"}), 404
-
-    files = os.listdir(job_output_dir)
-    if not files:
-        logger.warning(f"No se encontraron archivos de resultado en el directorio de salida para el job ID: {worker_job_id}")
-        return jsonify({"error": "No se encontraron archivos de resultado en el directorio de salida"}), 404
-
-    result_file = files[0]
-    logger.info(f"Descargando resultado '{result_file}' para el Job [ID: {worker_job_id}]")
+    
+    # send_from_directory es una función segura de Flask que previene el path traversal
+    # fuera del directorio especificado.
     try:
-        return send_from_directory(job_output_dir, result_file, as_attachment=True)
+        logger.info(f"Descargando resultado '{safe_filename}' para el Job [ID: {safe_worker_job_id}]")
+        return send_from_directory(job_output_dir, safe_filename, as_attachment=True)
+    except FileNotFoundError:
+        logger.warning(f"No se encontró el archivo '{safe_filename}' en el directorio de salida para el job ID: {safe_worker_job_id}")
+        return jsonify({"error": f"No se encontró el archivo de resultado '{safe_filename}'"}), 404
     except Exception as e:
-        logger.error(f"Error al descargar el archivo '{result_file}' para el Job [ID: {worker_job_id}]: {e}", exc_info=True)
-        return jsonify({"error": f"Error al descargar el archivo: {str(e)}"}), 500
+        logger.error(f"Error al descargar el archivo '{safe_filename}' para el Job [ID: {safe_worker_job_id}]: {e}", exc_info=True)
+        return jsonify({"error": f"Error interno al descargar el archivo: {str(e)}"}), 500
+
 
 @app.route('/cleanup/<worker_job_id>', methods=['POST'])
 def cleanup_job_files(worker_job_id):
@@ -119,6 +124,5 @@ def cleanup_job_files(worker_job_id):
         logger.warning(f"Se solicitó limpieza para un Job [ID: {worker_job_id}] no existente.")
         return jsonify({"message": "El directorio del trabajo no existía, no se necesita limpieza"}), 200
 
-# El bloque __main__ se mantiene para pruebas locales, pero no es usado por gunicorn
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
