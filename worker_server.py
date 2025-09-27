@@ -1,5 +1,5 @@
 # Morphius/morpheus-pod/worker_server.py
-# worker_server.py (Versión 26.1 - Model Package Abstraction)
+# worker_server.py (Versión 27.0 - Libertatem Stack Implementation)
 import logging
 import json
 import os
@@ -55,7 +55,8 @@ vlm_processor = None
 vlm_model = None
 fa = None # Para face-alignment
 
-MORPHEUS_AI_MODEL_ID = "Jchack/Meta-Llama-3.1-8B-uncensored-mirror"
+# [LIBERTATEM STACK UPDATE] Actualizado al modelo LLM sin censura seleccionado.
+MORPHEUS_AI_MODEL_ID = "mlx-community/Qwen2.5-7B-Instruct-Uncensored-4bit"
 VISUAL_MODEL_ID = "Salesforce/blip-image-captioning-base"
 
 # --- Constantes y Base de Datos en Memoria ---
@@ -86,7 +87,7 @@ except Exception as e:
     MORPHEUS_SYSTEM_PROMPT = "Eres un asistente de IA servicial."
 
 
-app = FastAPI(title="Morpheus AI Pod (Veritas)", version="26.1")
+app = FastAPI(title="Morpheus AI Pod (Libertatem)", version="27.0")
 
 @app.on_event("startup")
 async def startup_event():
@@ -150,8 +151,9 @@ def initialize_llm_background():
     try:
         if torch.cuda.is_available():
             tokenizer = AutoTokenizer.from_pretrained(MORPHEUS_AI_MODEL_ID)
-            llm_pipeline = pipeline("text-generation", model=MORPHEUS_AI_MODEL_ID, tokenizer=tokenizer, torch_dtype=torch.bfloat16, device_map="auto")
-            logger.info("Modelo de IA (LLM) cargado con éxito.")
+            # [LIBERTATEM STACK UPDATE] Se añade `trust_remote_code=True` que es a menudo necesario para modelos comunitarios.
+            llm_pipeline = pipeline("text-generation", model=MORPHEUS_AI_MODEL_ID, tokenizer=tokenizer, torch_dtype=torch.bfloat16, device_map="auto", trust_remote_code=True)
+            logger.info(f"Modelo de IA (LLM) '{MORPHEUS_AI_MODEL_ID}' cargado con éxito.")
     except Exception as e:
         logger.critical(f"FALLO CRÍTICO al cargar el modelo de IA (LLM): {e}", exc_info=True)
 
@@ -203,25 +205,20 @@ def get_image(filename, subfolder, folder_type):
 def get_history(prompt_id):
     with request.urlopen(f"{COMFYUI_URL}/history/{prompt_id}") as response: return json.loads(response.read())
 
-# --- =================================================== ---
-# --- INICIO DEL CÓDIGO MODIFICADO ---
-# --- =================================================== ---
 def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
     """
-    [NUEVA LÓGICA] Actualiza un workflow genérico usando un 'paquete de modelos' y el payload del trabajo.
+    Actualiza un workflow genérico usando un 'paquete de modelos' y el payload del trabajo.
     """
     updated_workflow = json.loads(json.dumps(workflow_data))
     model_package_name = payload.pop("model_package_name", None)
     
-    # 1. Cargar y aplicar el paquete de modelos si se especifica
     if model_package_name:
         try:
             packages_file_path = os.path.join(os.path.dirname(__file__), 'model_packages.json')
             with open(packages_file_path, 'r') as f:
                 all_packages = json.load(f)
             
-            # El payload debe indicar qué tipo de workflow es para buscar en la sección correcta del JSON
-            workflow_type_key = payload.get('workflow_type', 'video_transfer') # Default a video_transfer por seguridad
+            workflow_type_key = payload.get('workflow_type', 'video_transfer')
             packages_section_key = f"{workflow_type_key}_packages"
             
             if packages_section_key not in all_packages:
@@ -229,7 +226,6 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
                  
             model_params = all_packages[packages_section_key][model_package_name]
             
-            # Combinar los parámetros del paquete con el payload principal. El payload tiene prioridad.
             final_params = {**model_params, **payload}
             payload = final_params
             
@@ -237,14 +233,12 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
             logger.error(f"No se pudo cargar o aplicar el paquete de modelos '{model_package_name}': {e}", exc_info=True)
             raise ValueError(f"Paquete de modelos no válido: {model_package_name}")
 
-    # 2. Iterar y reemplazar placeholders en el workflow
     nodes_to_remove = []
-    links_to_remap = {} # Almacena a qué nodo debe apuntar una entrada si su fuente es eliminada
+    links_to_remap = {} 
 
     for node_id, node in updated_workflow.items():
         if 'inputs' in node:
             for key, value in list(node['inputs'].items()):
-                # Manejar placeholders en formato `__type:name__`
                 if isinstance(value, str):
                     placeholder = None
                     if value.startswith("__param:"):
@@ -256,34 +250,25 @@ def update_workflow_with_payload(workflow_data: Dict[str, Any], payload: Dict[st
                     
                     if placeholder and placeholder in payload:
                         param_value = payload[placeholder]
-                        # Si el valor del payload es None, significa que el nodo y sus dependencias deben ser desactivados
                         if param_value is None:
                             logger.warning(f"El valor para '{placeholder}' es nulo en el paquete. El nodo {node_id} ({node.get('class_type')}) será desactivado.")
                             nodes_to_remove.append(node_id)
                             break
                         else:
                             node['inputs'][key] = param_value
-                # Manejar enlaces de entrada en formato `[node_id, output_index]`
                 elif isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
                     source_node_id = value[0]
                     if source_node_id in nodes_to_remove:
-                        # Si nuestro nodo de entrada va a ser eliminado, necesitamos reconectar
-                        # Asumimos una cadena simple: A -> B -> C. Si B se elimina, C ahora debe apuntar a A.
                         source_node_of_removed = updated_workflow.get(source_node_id, {}).get('inputs', {}).get('model', [None])[0]
                         if source_node_of_removed:
                              logger.info(f"Remapeando entrada para el nodo {node_id}: {value} -> [{source_node_of_removed}, {value[1]}]")
                              node['inputs'][key] = [source_node_of_removed, value[1]]
 
-
-    # 3. Eliminar los nodos marcados
     for node_id in set(nodes_to_remove):
         if node_id in updated_workflow:
             del updated_workflow[node_id]
 
     return updated_workflow
-# --- =================================================== ---
-# --- FIN DEL CÓDIGO MODIFICADO ---
-# --- =================================================== ---
 
 def run_comfyui_generation(workflow_json: Dict, output_dir: str, client_id: str) -> List[str]:
     ws = websocket.WebSocket(); ws.connect(f"ws://{SERVER_ADDRESS}/ws?clientId={client_id}"); prompt_id = queue_prompt(workflow_json, client_id)['prompt_id']; output_files = [];
@@ -322,7 +307,6 @@ def run_job_thread(client_id: str, workflow_name: str, config_payload: Dict[str,
         workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", f"{workflow_name}.json")
         with open(workflow_path, 'r') as f: workflow_data = json.load(f)
         
-        # [MODIFICACIÓN] Añadimos el tipo de workflow al payload para la nueva función de actualización
         config_payload["workflow_type"] = workflow_name
         updated_workflow = update_workflow_with_payload(workflow_data, config_payload)
         
@@ -352,7 +336,6 @@ def run_chained_job_thread(client_id: str, chained_tasks: list):
             workflow_path = os.path.join(MORPHEUS_LIB_DIR, "workflows", f"{workflow_name}.json")
             with open(workflow_path, 'r') as f: workflow_data = json.load(f)
             
-            # [MODIFICACIÓN] También se aplica aquí
             config_payload["workflow_type"] = workflow_name
             updated_workflow = update_workflow_with_payload(workflow_data, config_payload)
 
@@ -377,7 +360,6 @@ def run_chained_job_thread(client_id: str, chained_tasks: list):
         logger.error(f"Fallo en run_chained_job_thread [Job ID: {client_id}]: {e}", exc_info=True)
         job_status_db[client_id] = {"status": "FAILED", "output": None, "error": str(e), "progress": 0}
 
-# --- [NUEVO] Endpoint de Especificaciones ---
 @app.get("/specs", response_model=SpecsResponse)
 async def get_pod_specs():
     """Devuelve las especificaciones del hardware y el resultado del benchmark."""
@@ -393,8 +375,8 @@ async def create_job(payload: JobPayload):
         logger.info(f"[Orquestador] Recibido trabajo 'full_transform' con ID: {client_id}")
         task_chain = []
         
-        # [MODIFICACIÓN] El payload para full_transform ahora contendrá 'model_package_name'
-        # La lógica de encadenamiento necesita pasar esta información crucial
+        # [LIBERTATEM STACK UPDATE] El 'model_package_name' ahora referenciará a un paquete con RealVisXL y FaceID.
+        # La lógica de encadenamiento necesita pasar esta información crucial.
         base_video_payload = {
             "target_video_pod_path": config["target_video_pod_path"],
             "model_package_name": config.get("model_package_name") 
@@ -402,11 +384,12 @@ async def create_job(payload: JobPayload):
         task_chain.append({"workflow": "extract_audio", "config_payload": base_video_payload})
         if config.get("enable_voice_clean", True):
             task_chain.append({"workflow": "clean_audio", "config_payload": {}})
-        task_chain.append({"workflow": "voice_transfer", "config_payload": config})
         
-        # El workflow 'video_transfer' es el que realmente usará el paquete
+        # [LIBERTATEM STACK UPDATE] El antiguo 'voice_transfer' (RVC) se reemplaza por 'voice_style_transfer' (Amphion/DualCodec).
+        task_chain.append({"workflow": "voice_style_transfer", "config_payload": config})
+        
         video_transfer_config = config.copy()
-        video_transfer_config["workflow_type"] = "video_transfer" # Clave para que el worker sepa qué sección del JSON de paquetes buscar
+        video_transfer_config["workflow_type"] = "video_transfer"
         task_chain.append({"workflow": "video_transfer", "config_payload": video_transfer_config})
         
         if config.get("enable_relighting", False):
@@ -421,25 +404,27 @@ async def create_job(payload: JobPayload):
         thread.start()
         return {"message": "Pipeline de transformación total recibido y orquestado", "id": client_id, "status": "IN_QUEUE"}
 
+    # [LIBERTATEM STACK UPDATE] El mapa de workflows se actualiza: se elimina el obsoleto 'train_rvc' y 'lipsync'
+    # apuntará a un nuevo workflow 3D.
     workflow_map = {
-        "train_rvc": (run_rvc_training_thread, (client_id, config)),
         "analyze_image": (run_vlm_analysis_thread, (client_id, workflow_name, config)),
         "generate_dataset_from_scratch": (run_dataset_generation_job_thread, (client_id, workflow_name, config)),
         "generate_dataset_from_reference": (run_dataset_generation_job_thread, (client_id, workflow_name, config)),
         "create_pid": (run_pid_creation_job_thread, (client_id, config)),
         "install_lora": (run_management_job_thread, (client_id, workflow_name, config)),
-        "install_rvc": (run_management_job_thread, (client_id, workflow_name, config)),
+        "install_rvc": (run_management_job_thread, (client_id, workflow_name, config)), # Se mantiene por si se usan modelos legacy
         "text_to_speech": (run_audio_job_thread, (client_id, workflow_name, config)),
         "generate_sfx": (run_audio_job_thread, (client_id, workflow_name, config)),
         "clean_audio": (run_audio_job_thread, (client_id, workflow_name, config)),
         "extract_audio": (run_audio_job_thread, (client_id, workflow_name, config)),
         "transcribe_audio": (run_audio_job_thread, (client_id, workflow_name, config)),
-        "voice_transfer": (run_audio_job_thread, (client_id, workflow_name, config)),
+        "voice_style_transfer": (run_audio_job_thread, (client_id, workflow_name, config)), # Nuevo workflow de voz
         "stitch_video": (run_video_editing_job_thread, (client_id, workflow_name, config)),
         "video_inpainting": (run_video_editing_job_thread, (client_id, workflow_name, config)),
         "mux_video_audio": (run_video_editing_job_thread, (client_id, workflow_name, config)),
         "advanced_relight": (run_video_editing_job_thread, (client_id, workflow_name, config)),
         "validate_dataset": (run_job_thread, (client_id, workflow_name, config)),
+        "lipsync_3d": (run_job_thread, (client_id, workflow_name, config)), # Nuevo workflow de animación 3D
     }
     
     if workflow_name in workflow_map:
