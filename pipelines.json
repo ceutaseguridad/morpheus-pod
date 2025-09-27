@@ -1,0 +1,30 @@
+{
+    "full_transform": {
+        "description": "Meta-workflow para reemplazar un actor, clonar su voz y realizar un post-procesado completo.",
+        "steps": [
+            {
+                "workflow": "extract_audio",
+                "config_map": {
+                    "source_video_pod_path": "target_video_pod_path"
+                }
+            },
+            {
+                "workflow": "clean_audio",
+                "condition_flag": "enable_voice_clean"
+            },
+            {
+                "workflow": "voice_style_transfer"
+            },
+            {
+                "workflow": "video_transfer"
+            },
+            {
+                "workflow": "mux_video_audio"
+            },
+            {
+                "workflow": "post_process_veritas",
+                "condition_flag": "enable_post_process"
+            }
+        ]
+    }
+}
