@@ -1,18 +1,11 @@
 {
   "video_transfer_packages": {
-    "Sora_V2_Identity_Only": {
-      "description": "Alta calidad. Transfiere solo la cara, sin control de pose o ropa. Rápido y estable.",
-      "base_model": "sora_v2_alt_1_2.safetensors",
-      "ip_adapter_face": "ip-adapter-plus-face_sdxl.bin",
+    "RealVisXL_FaceID_v2": {
+      "description": "Stack de vanguardia basado en SDXL para fotorrealismo de máxima calidad. Utiliza el IP-Adapter FaceID v2 para una consistencia de identidad superior en vídeo. Ideal para producciones de alta fidelidad.",
+      "base_model": "RealVisXL_V5.0_fp32.safetensors",
+      "ip_adapter_face": "ip-adapter-faceid-plusv2_sdxl_lora.safetensors",
       "ip_adapter_clothing": null,
       "controlnet_pose": null
-    },
-    "SD1.5_Full_Control (Legacy)": {
-      "description": "Calidad inferior, pero con control total de cara, ropa y pose. Útil para escenas complejas.",
-      "base_model": "v1-5-pruned-emaonly.safetensors",
-      "ip_adapter_face": "ip-adapter-plus-face_sd15.bin",
-      "ip_adapter_clothing": "ip-adapter-plus_sd15.bin",
-      "controlnet_pose": "control_v11p_sd15_openpose.pth"
     }
   }
 }
